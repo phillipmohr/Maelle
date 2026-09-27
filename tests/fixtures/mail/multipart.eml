@@ -1,0 +1,31 @@
+Return-Path: <tom.becker@example.com>
+Delivered-To: support@instaradar.app
+Date: Sun, 27 Sep 2026 09:12:00 +0200
+From: Tom Becker <tom.becker@example.com>
+To: InstaRadar Support <support@instaradar.app>
+Subject: Please cancel my subscription
+Message-ID: <multipart-001@mail.example.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hi,
+
+I=E2=80=99d like to cancel my subscription at the end of the current period=
+. I don=E2=80=99t use the tracked profiles anymore.
+
+Thanks,
+Tom
+
+--b1
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">Hi,<br><br>I=E2=80=99d like to cancel my subscription at t=
+he end of the current period. I don=E2=80=99t use the tracked profiles anym=
+ore.<br><br>Thanks,<br>Tom</div>
+
+--b1--

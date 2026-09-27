@@ -1,0 +1,24 @@
+Return-Path: <>
+Date: Sun, 27 Sep 2026 12:00:00 +0000
+From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+To: support@instaradar.app
+Subject: Delivery Status Notification (Failure)
+Message-ID: <bounce-001@mail.gmail.com>
+In-Reply-To: <reply-from-support-4809@instaradar.app>
+References: <reply-from-support-4809@instaradar.app>
+Auto-Submitted: auto-replied
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=delivery-status; boundary="r1"
+
+--r1
+Content-Type: text/plain; charset="UTF-8"
+
+Your message wasn't delivered to daniel.okafor@example.com because the address couldn't be found.
+--r1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; googlemail.com
+Final-Recipient: rfc822; daniel.okafor@example.com
+Action: failed
+Status: 5.1.1
+--r1--
