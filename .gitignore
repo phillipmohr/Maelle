@@ -1,0 +1,26 @@
+# dependencies
+node_modules
+
+# nuxt
+.nuxt
+.output
+.data
+.nitro
+.cache
+dist
+
+# env: never commit credentials
+.env
+.env.*
+!.env.example
+
+# tooling
+coverage
+*.log
+.DS_Store
+.vercel
+supabase/.temp
+supabase/.branches
+
+# local worktrees used by coding agents
+.claude/worktrees

@@ -1,0 +1,276 @@
+@import 'tailwindcss';
+@import './fonts.css';
+@import './tokens.css';
+
+/*
+ * Tailwind theme. Tailwind's default palette, fonts, radii and shadows are removed on purpose:
+ * every utility maps to a Maelle token, so nothing in the app can look like default Tailwind or
+ * default shadcn. Utilities: bg-page/base/elevated/inset, border-line, text-fg/fg-muted/fg-accent,
+ * text-ember/brick/sage/gilt/sand/ivory/slate-blue, bg-primary text-on-primary, font-sans/mono/serif,
+ * rounded-xs/sm/md/lg/pill, shadow-lamp, ease-standard, duration-fast/base.
+ */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --ease-*: initial;
+
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  --color-ivory: #f1e7d4;
+  --color-ivory-200: #eee2c9;
+  --color-sand: #b3a48c;
+  --color-gilt: #c6a15b;
+  --color-ink: #1c140c;
+  --color-sage: #8dba84;
+  --color-ember: #e58c4f;
+  --color-brick: #e26a60;
+  --color-slate-blue: #88a9cf;
+  --color-umber-950: #17110b;
+  --color-umber-900: #211810;
+  --color-umber-850: #2c2117;
+  --color-umber-700: #433426;
+
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  --shadow-lamp: 0 0 0 1px #eee2c914, 0 24px 60px -20px #eee2c92e;
+  --shadow-none: 0 0 #0000;
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --text-eyebrow: 11px;
+  --text-eyebrow--line-height: 1.4;
+  --text-eyebrow--letter-spacing: 0.14em;
+  --text-caption: 12px;
+  --text-caption--line-height: 1.4;
+  --text-small: 13px;
+  --text-small--line-height: 1.45;
+  --text-body: 14px;
+  --text-body--line-height: 1.55;
+  --text-subject: 15px;
+  --text-subject--line-height: 1.5;
+  --text-title: 17px;
+  --text-title--line-height: 1.35;
+  --text-h3: 20px;
+  --text-h3--line-height: 1.25;
+  --text-decision: 26px;
+  --text-decision--line-height: 1.2;
+  --text-heading: 28px;
+  --text-heading--line-height: 1.15;
+  --text-h1: 40px;
+  --text-h1--line-height: 1.05;
+  --text-display: 44px;
+  --text-display--line-height: 1.05;
+}
+
+/* Semantic aliases resolved at use time (kept as variables so the design tokens stay the source). */
+@theme inline {
+  --color-page: var(--surface-page);
+  --color-base: var(--surface-base);
+  --color-elevated: var(--surface-elevated);
+  --color-inset: var(--surface-inset);
+  --color-line: var(--border-default);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text-primary);
+  --color-fg-muted: var(--text-secondary);
+  --color-fg-accent: var(--text-accent);
+  --color-on-primary: var(--text-on-primary);
+  --color-primary: var(--action-primary-bg);
+  --color-primary-foreground: var(--action-primary-fg);
+  --color-draft: var(--status-draft);
+  --color-info: var(--status-info);
+  --color-success: var(--status-success);
+  --color-warning: var(--status-warning);
+  --color-error: var(--status-error);
+}
+
+@layer base {
+  html {
+    background: var(--surface-page);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-page);
+    color: var(--text-primary);
+    font: var(--type-body);
+    font-variant-numeric: tabular-nums;
+  }
+
+  a {
+    color: var(--brand-accent);
+    text-decoration: none;
+  }
+  a:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  ::selection {
+    background: rgba(198, 161, 91, 0.35);
+    color: var(--text-primary);
+  }
+
+  :focus-visible {
+    outline: 1.5px solid var(--gilt-500);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.7;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--umber-700) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--umber-700);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+}
+
+@utility lamp {
+  background-image: var(--gradient-lamp);
+  box-shadow: var(--shadow-lamp);
+}
+
+@utility lamp-bg {
+  background-image: var(--gradient-lamp);
+}
+
+@utility type-display {
+  font: var(--type-display);
+  text-wrap: pretty;
+}
+@utility type-heading {
+  font: var(--type-heading);
+  text-wrap: pretty;
+}
+@utility type-decision {
+  font: var(--type-decision);
+  text-wrap: pretty;
+}
+@utility type-title {
+  font: var(--type-title);
+}
+@utility type-body {
+  font: var(--type-body);
+}
+@utility type-caption {
+  font: var(--type-caption);
+}
+@utility type-mono {
+  font: var(--type-mono);
+}
+@utility type-eyebrow {
+  font: 600 var(--fs-eyebrow) / 1.4 var(--font-sans);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+}
+
+/* Status tint helpers: `tint-ember`, `tint-brick`, `tint-sage`, `tint-slate-blue`, `tint-gilt`. */
+@utility tint-* {
+  background-color: --alpha(--value(--color-*) / 8%);
+  border-color: --alpha(--value(--color-*) / 33%);
+  color: --value(--color-*);
+}
+
+/* Hairline dividers between stacked rows. */
+@utility divide-hairline {
+  & > * + * {
+    border-top: 1px solid var(--border-default);
+  }
+}
+
+/* Motion */
+@utility transition-standard {
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--dur-base);
+}
+@utility transition-fast {
+  transition-timing-function: var(--ease-standard);
+  transition-duration: var(--dur-fast);
+}
+
+@keyframes maelle-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes maelle-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes maelle-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@utility animate-in {
+  animation: maelle-fade-in var(--dur-base) var(--ease-standard);
+}
+@utility animate-out {
+  animation: maelle-fade-out var(--dur-fast) var(--ease-standard) forwards;
+}
+@utility animate-pulse-soft {
+  animation: maelle-pulse 1.6s var(--ease-standard) infinite;
+}

@@ -1,0 +1,75 @@
+/* Webfonts extracted from uploads/Maelle Directions.html (Google Fonts subsets: latin + latin-ext) */
+
+/* Maelle · "Lamplight" palette (source: uploads/Maelle Directions.html, 2a) */
+:root{
+/* base: umber ramp */
+--umber-950:#17110B;--umber-900:#211810;--umber-850:#2C2117;--umber-700:#433426;
+/* base: ivory + gilt */
+--ivory-100:#F1E7D4;--ivory-200:#EEE2C9;--sand-400:#B3A48C;--ink-900:#1C140C;--ink-800:#1C1712;
+--gilt-500:#C6A15B;
+/* base: signals */
+--sage-400:#8DBA84;--ember-400:#E58C4F;--brick-400:#E26A60;--slate-blue-400:#88A9CF;
+
+/* semantic: surfaces */
+--surface-page:var(--umber-950);--surface-base:var(--umber-900);--surface-elevated:var(--umber-850);--surface-inset:var(--umber-900);
+--border-default:var(--umber-700);--border-strong:var(--sand-400);
+/* semantic: text */
+--text-primary:var(--ivory-100);--text-secondary:var(--sand-400);--text-on-primary:var(--ink-900);--text-accent:var(--gilt-500);
+/* semantic: actions */
+--action-primary-bg:var(--ivory-200);--action-primary-fg:var(--ink-900);--action-secondary-border:var(--umber-700);--action-secondary-border-hover:var(--sand-400);
+/* semantic: brand + status */
+--brand-accent:var(--gilt-500);
+--status-draft:var(--gilt-500);--status-success:var(--sage-400);--status-warning:var(--ember-400);--status-error:var(--brick-400);--status-info:var(--slate-blue-400);
+/* status tints: 14 = ~8% fill, 55 = ~33% border (hex alpha, as in source) */
+--tint-fill-alpha:0.08;--tint-border-alpha:0.33;
+/* lamplight glow */
+--glow-lamp:rgba(238,226,201,0.10);
+}
+
+:root{
+--font-serif-display:'Instrument Serif',Georgia,serif;
+--font-sans:'Geist',-apple-system,BlinkMacSystemFont,sans-serif;
+--font-mono:'Geist Mono',ui-monospace,monospace;
+
+/* scale (px values copied from source) */
+--fs-wordmark:104px;--fs-display:44px;--fs-h1:40px;--fs-heading:28px;--fs-decision:26px;--fs-h3:20px;
+--fs-title:17px;--fs-lead:16px;--fs-subject:15px;--fs-body:14px;--fs-small:13px;--fs-caption:12px;--fs-eyebrow:11px;--fs-mono:12px;
+
+--lh-tight:0.9;/* @kind font */--lh-display:1.05;/* @kind font */--lh-heading:1.15;/* @kind font */--lh-decision:1.2;/* @kind font */--lh-title:1.35;/* @kind font */--lh-caption:1.4;/* @kind font */--lh-body:1.55;/* @kind font */--lh-reading:1.6;/* @kind font */
+
+--fw-regular:400;/* @kind font */--fw-medium:500;/* @kind font */--fw-semibold:600;/* @kind font */
+
+--ls-eyebrow:0.14em;/* @kind font */--ls-tagline:0.22em;/* @kind font */--ls-wordmark:-0.01em;/* @kind font */--ls-pill:0.01em;/* @kind font */
+
+/* semantic roles */
+--type-display:400 var(--fs-display)/var(--lh-display) var(--font-serif-display);
+--type-heading:400 var(--fs-heading)/var(--lh-heading) var(--font-serif-display);
+--type-title:600 var(--fs-title)/var(--lh-title) var(--font-sans);
+--type-body:400 var(--fs-body)/var(--lh-body) var(--font-sans);
+--type-caption:500 var(--fs-caption)/var(--lh-caption) var(--font-sans);
+--type-mono:400 var(--fs-mono)/var(--lh-caption) var(--font-mono);
+}
+
+:root{
+/* spacing (values observed in source) */
+--space-1:2px;--space-2:6px;--space-3:8px;--space-4:10px;--space-5:14px;--space-6:18px;--space-7:20px;--space-8:24px;--space-9:28px;--space-10:40px;--space-11:48px;--space-12:56px;--space-13:64px;
+/* component paddings */
+--pad-button:11px 22px;--pad-button-secondary:11px 20px;--pad-pill:3px 9px 3px 8px;--pad-card:28px;--pad-row:13px 18px;--pad-panel-head:16px 18px;--pad-inset:14px 16px;--pad-section:40px 64px;
+
+/* radii */
+--radius-xs:3px;--radius-sm:4px;--radius-md:6px;--radius-lg:10px;--radius-pill:999px;
+
+/* borders */
+--border-width:1px;--border-hairline:1px solid var(--border-default);
+
+/* elevation: gilt/ivory lamp glow, never black drop shadows */
+--shadow-lamp:0 0 0 1px #EEE2C914,0 24px 60px -20px #EEE2C92E;
+--gradient-lamp:radial-gradient(120% 90% at 30% 0%,rgba(238,226,201,0.10),rgba(238,226,201,0) 60%);/* @kind other */
+
+/* motion */
+--ease-standard:cubic-bezier(0.2,0,0,1);/* @kind other */--dur-fast:120ms;/* @kind other */--dur-base:180ms;/* @kind other */
+--hover-brighten:brightness(1.08);/* @kind other */
+}
+
+a{color:var(--brand-accent);text-decoration:none}a:hover{color:var(--text-primary);text-decoration:underline;text-underline-offset:3px}
+

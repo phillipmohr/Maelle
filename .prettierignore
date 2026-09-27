@@ -1,0 +1,11 @@
+node_modules
+.nuxt
+.output
+.data
+dist
+coverage
+pnpm-lock.yaml
+shared/types/database.ts
+supabase/.temp
+*.woff2
+docs/design
