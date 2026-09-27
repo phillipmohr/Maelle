@@ -508,3 +508,99 @@ attachment, linked Linear issue, knowledge refs and the no-em-dash rule (`evals/
 and, while the jobs service is still the stub, runs the agent inline; the run then fails fast with
 "Database is not configured" because the agent writes to Maelle's tables. With `SUPABASE_DB_URL`
 and `ANTHROPIC_API_KEY` set, the run is real; sources without credentials are skipped with a warning.
+
+## Mail and jobs (IRDR-455)
+
+Every mail to support@instaradar.app becomes a ticket, every reply goes out exactly once, and one
+job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`.
+
+### How it runs
+
+- `POST|GET /api/cron/tick` every minute (Vercel Cron, `vercel.json`): evaluates the recurring
+  schedule from `job_heartbeats`, runs due jobs from the `jobs` table within `JOBS_TICK_BUDGET_MS`,
+  checks health, prunes old history once a day.
+- `POST|GET /api/cron/fetch-mail` every minute: the `fetch_mail` lane, so a long agent run never
+  delays inbound mail.
+- `POST /api/webhooks/linear`: a completed issue of the InstaRadar team creates one
+  `release_notification` ticket per stored customer email and enqueues the agent.
+- Handlers: `services.jobs.registerHandler(type, handler)`. This ticket registers `fetch_mail`,
+  `wake_snoozed`, `waiting_follow_up` and `send_system_email`; the agent registers `agent_run`, the
+  executor `run_due_scheduled`, autonomy `daily_digest`. A job without a handler waits and is
+  retried a minute later (logged, never dropped).
+- Enqueue: `services.jobs.enqueue(type, payload, runAt?)`. Inbound mail, the timers and the webhook
+  enqueue `agent_run` with a dedupe key, so the same event never produces two runs.
+- Sending: `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })`. Pass the
+  execution id as `idempotencyKey`; a retry returns the stored result without sending. The reply
+  carries `In-Reply-To`/`References` of the latest customer mail, the thread's subject with `Re:`,
+  plain text plus simple HTML, and attachments from Storage. `services.mail.sendSystemEmail(to,
+subject, body)` goes to `NOTIFY_EMAIL` when `to` is empty.
+- Follow-ups: `shared/follow-up.ts` `followUpKindDue()` decides between `follow_up` (after
+  `settings.follow_up_days`) and `auto_close` (after `settings.auto_close_days`), counted from our
+  first reply after the customer's last message. The agent can read the latest
+  `ticket_follow_ups` row of a ticket to see which one a `follow_up` run is for.
+- Tables added: `jobs`, `job_runs`, `job_heartbeats`, `mail_cursors`, `mail_sends`, `mail_ignored`,
+  `ticket_follow_ups`; columns `messages.text_stripped`, `messages.provider_thread_id`,
+  `messages.headers`.
+
+### Which mail provider
+
+The mailbox host decides the adapter. Run `dig MX instaradar.app` (or `nslookup -type=MX
+instaradar.app`):
+
+- MX records pointing to `*.google.com` / `*.googlemail.com`: Google Workspace. Use
+  `MAIL_PROVIDER=gmail` with either an OAuth client of the mailbox (Google Cloud project, Gmail API
+  enabled, OAuth client "Desktop app", one-time consent with scope
+  `https://www.googleapis.com/auth/gmail.modify` to obtain `GMAIL_OAUTH_REFRESH_TOKEN`), or a
+  service account with domain-wide delegation for that scope (`GMAIL_SERVICE_ACCOUNT_JSON`,
+  `GMAIL_IMPERSONATE_USER=support@instaradar.app`). The cursor is the mailbox history id; replies
+  are sent through the API into the same thread and land in Sent automatically.
+- Anything else (Zoho, Fastmail, Namecheap, Hetzner, ...): `MAIL_PROVIDER=imap` with
+  `IMAP_HOST/IMAP_PORT/IMAP_USER/IMAP_PASSWORD` and `SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD`
+  (usually the same login; use an app password when 2FA is on). The cursor is the INBOX UID; sent
+  mail is appended to the Sent folder (`IMAP_SENT_FOLDER` if it cannot be detected).
+- No credentials: the in-memory fake, which is also what the tests use. For a local end-to-end
+  run set `MAIL_FAKE_DIR=.data/mail` and drop `.eml` files there (names sort chronologically, e.g.
+  `2026-09-27T10-00-mail.eml`); sent mail is written to `.data/mail/sent`.
+
+Inbound rules: dedupe by `Message-ID` (and provider id); auto-replies (`Auto-Submitted` other than
+`no`, `Precedence: auto_reply`, `X-Autoreply`, out-of-office subjects), bounces (mailer-daemon,
+delivery-status reports, empty `Return-Path`), bulk mail (`Precedence: bulk|junk|list`, list
+headers) and our own mail never become tickets (see `mail_ignored`). Threading: `In-Reply-To` /
+`References`, then the provider thread id, then same sender + same normalised subject within 30
+days. A customer reply moves `waiting_on_customer`, `closed`, `snoozed` and `needs_decision` to
+`researching` and enqueues a `customer_reply` run; a reply on a `new` ticket is attached to the
+queued run; other statuses attach and enqueue a run without changing the status.
+
+### Linear webhook
+
+Linear → Settings → API → Webhooks → new webhook with URL `https://<maelle>/api/webhooks/linear`,
+resource "Issues", team InstaRadar. Put the signing secret into `LINEAR_WEBHOOK_SECRET` and the
+team into `LINEAR_TEAM_ID` (or `LINEAR_TEAM_KEY`, default `IRDR`). The signature is HMAC-SHA256 of
+the raw body; deliveries older than five minutes are rejected; retries are idempotent.
+
+### Deploying the crons
+
+`vercel.json` schedules both routes every minute. Set `CRON_SECRET` in the Vercel project (Vercel
+sends it as `Authorization: Bearer ...`). Per-minute crons need the Pro plan (Hobby allows daily
+crons only) and the cron function needs a max duration of 300 s (Vercel Fluid compute default; if
+the project is configured differently, set `nitro.vercel.functions.maxDuration = 300` in
+`nuxt.config.ts` or the function max duration in the Vercel dashboard, and keep
+`JOBS_TICK_BUDGET_MS` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
+call the same URLs; the SQL is in the ADR.
+
+### Trying it locally
+
+```bash
+AUTH_DISABLED=true CRON_SECRET=dev SUPABASE_DB_URL=postgresql://postgres@127.0.0.1:54329/maelle_irdr455 pnpm dev --port 3001
+curl -s -X POST -H 'Authorization: Bearer dev' localhost:3001/api/cron/fetch-mail | jq
+curl -s -X POST -H 'Authorization: Bearer dev' localhost:3001/api/cron/tick | jq
+```
+
+Tests: `pnpm test` covers parsing (multipart, HTML only, forwarded, non-English, auto-reply, bounce,
+attachment), classification, quote stripping, threading, MIME composition, provider selection,
+schedule slots, backoff and the webhook signature. `TEST_DATABASE_URL=... TEST_DB_NAME=maelle_irdr455
+pnpm test:db` covers the pipeline end to end on a real Postgres: ingest and dedupe, threading and
+status transitions, ignored mail, attachments, a crash mid-ingest, exactly-once sends (retry,
+send-then-crash, stale lock takeover, concurrency), enqueue/claim/retry/dead-letter, expired locks,
+per-ticket serialisation, the recurring schedule, snooze wake-up, follow-up timers, health alerts,
+the Linear webhook and both cron lanes.

@@ -1,4 +1,2 @@
-/** POST /api/cron/fetch-mail — owner: IRDR-455. Fetches support@instaradar.app. CRON_SECRET required. */
-import { notImplemented } from '../../utils/stubs'
-
-export default defineEventHandler(() => notImplemented('IRDR-455', 'Mail fetch'))
+/** POST /api/cron/fetch-mail — owner: IRDR-455. Fetches support@instaradar.app (fetch_mail lane). CRON_SECRET required. */
+export { fetchMailHandler as default } from '../../jobs/http'

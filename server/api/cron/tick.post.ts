@@ -1,4 +1,2 @@
-/** POST /api/cron/tick — owner: IRDR-455. Runs due jobs (wake_snoozed, waiting_follow_up, run_due_scheduled, daily_digest). CRON_SECRET required. */
-import { notImplemented } from '../../utils/stubs'
-
-export default defineEventHandler(() => notImplemented('IRDR-455', 'Job runner tick'))
+/** POST /api/cron/tick — owner: IRDR-455. Recurring schedule + due jobs within the time budget. CRON_SECRET required. */
+export { tickHandler as default } from '../../jobs/http'
