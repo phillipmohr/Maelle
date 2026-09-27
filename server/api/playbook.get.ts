@@ -1,12 +1,15 @@
 /**
- * GET /api/playbook — owner: IRDR-459. Already real: links into Notion from the shared contracts.
- * The autonomy ticket adds live Examples / Knowledge Base counts through NOTION_READ_TOKEN.
+ * GET /api/playbook — owner: IRDR-459. Read-only links into Notion: the Customer Support protocol,
+ * the 17 templates with their actions, Examples and Knowledge Base with live counts through
+ * NOTION_READ_TOKEN (snapshot counts without it).
  */
 import type { PlaybookResponse } from '#shared/api'
 import { NOTION, TEMPLATE_CASE_TYPES, CASE_TYPES, notionPageUrl } from '#shared/case-types'
+import { loadPlaybookCounts } from '../learning/notion-counts'
 
-export default defineEventHandler((): PlaybookResponse => {
+export default defineEventHandler(async (): Promise<PlaybookResponse> => {
   const support = notionPageUrl(NOTION.customerSupportPageId)
+  const counts = await loadPlaybookCounts(process.env.NOTION_READ_TOKEN)
   return {
     protocol: [
       { title: 'Persona & Tone', url: support },
@@ -26,7 +29,13 @@ export default defineEventHandler((): PlaybookResponse => {
           : notionPageUrl(NOTION.templatesDatabaseId),
       }
     }),
-    examples: { count: 10, url: notionPageUrl(NOTION.examplesDatabaseId) },
-    knowledgeBase: { active: 0, draft: 0, url: notionPageUrl(NOTION.knowledgeBaseDatabaseId) },
+    examples: { count: counts.examples.total, url: notionPageUrl(NOTION.examplesDatabaseId) },
+    examplesStatus: { active: counts.examples.active, draft: counts.examples.draft },
+    knowledgeBase: {
+      active: counts.knowledgeBase.active,
+      draft: counts.knowledgeBase.draft,
+      url: notionPageUrl(NOTION.knowledgeBaseDatabaseId),
+    },
+    liveCounts: counts.live,
   }
 })
