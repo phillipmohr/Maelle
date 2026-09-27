@@ -19,12 +19,18 @@ const url = process.env.TEST_DATABASE_URL
 describe.skipIf(!url)('agent runs against Postgres', () => {
   let db: pg.Client
   const store = createDbAgentStore()
+  const created: string[] = []
 
   beforeAll(async () => {
     db = new pg.Client({ connectionString: url })
     await db.connect()
   })
   afterAll(async () => {
+    // Remove the tickets this suite created (cascades to messages, runs, proposals), so suites that
+    // share the seeded test database (tickets list counts) keep seeing the seed only.
+    if (db && created.length > 0) {
+      await db.query('delete from public.tickets where id = any($1::uuid[])', [created])
+    }
     await db?.end()
     await closeDbForTests()
   })
@@ -43,6 +49,7 @@ describe.skipIf(!url)('agent runs against Postgres', () => {
       ],
     )
     const id = t.rows[0]!.id
+    created.push(id)
     for (const m of fixture.messages) {
       await db.query(
         `insert into public.messages (ticket_id, direction, from_email, from_name, to_emails, subject, text_body, received_at, sent_at, sent_by, created_at)
