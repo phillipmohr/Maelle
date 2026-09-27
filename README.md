@@ -148,3 +148,140 @@ Every integration uses the narrowest key that can do its job. Names are in `.env
 Vercel picks up the Nuxt build automatically (`pnpm build`). Set the variables from `.env.example`
 in the Vercel project (preview and production). Cron schedules are added by the mail/jobs ticket
 (`vercel.json` or Supabase cron, see `docs/adr/001-jobs.md`).
+
+## IRDR-456 · AnastasAI agent run
+
+`server/agent/` turns one ticket into one validated proposal: case, research with sources, actions
+from the registry, reply draft. The agent reads everything and writes nothing outside Maelle's own
+tables; that is enforced by construction, not by the prompt. `tests/agent/credentials.test.ts`
+proves the module tree never references a write credential name and never imports the executor, and
+that the agent's config accessor (`server/agent/config.ts`, the only place that reads the
+environment) exposes read keys only.
+
+### How a run works
+
+`services.agent.run(ticketId, trigger)` (registered from `server/plugins/agent.ts`, which also
+registers the `agent_run` job handler):
+
+1. `beginRun` creates the `agent_runs` row (or reuses the row of the same job id: retried jobs bump
+   `attempt`, a finished job is not run twice). Status: `new` or `needs_decision` → `researching`
+   through `transition()`; `waiting_on_customer`, `snoozed` and `closed` are accepted too when the
+   mail ticket did not move the ticket yet.
+2. **Deterministic pre-research** (`research.ts`) fetches Stripe, the InstaRadar database, the
+   Vercel logs, Linear and the email history in parallel, each with its own timeout, and writes
+   `agent_runs.progress` after every source settles (`stripe ✓ supabase ✓ vercel ⋯ kb ✓`). A source
+   without credentials is `skipped`, a failing one `failed`, both with a research warning; neither
+   blocks the proposal. The Stripe customer is found through the ticket email, then through emails
+   and names mentioned in the message (a bank writes about its member).
+3. `context.ts` derives the customer facts and the context panel snapshot (plan, status, renewal or
+   cancellation date, customer since, card, payments and refunds timeline, tracked profiles, previous
+   tickets, log errors with counts, tags such as Long-term, New customer, Refund used, Resubscribed,
+   Business plan) in code.
+4. **Claude tool-use loop** (`loop.ts`, `prompt.ts`, `tools/definitions.ts`): system prompt from the
+   Notion protocol, the 17 templates, the examples, the knowledge base and the action registry
+   (cached with `cache_control`); user message with the thread, the research bundle, the facts and
+   hints. Read-only tools: `stripe_events`, `stripe_search_customers`, `stripe_retrieve`,
+   `instaradar_select` (one guarded SELECT), `instaradar_profile`, `vercel_logs`, `linear_search`,
+   `notion_page`, `email_history`. Output only through `submit_proposal`.
+5. `finalize.ts` owns what must not depend on the model: the confirmation stage
+   (`customerConfirmationNeeded` follows the template plus the detected answer in the thread),
+   the risk floor (safety for removal requests, high for chargebacks, open disputes, legal threats
+   and long-term customers with an issue), the due date extracted from the message, the recipient,
+   the template reference, `noKnowledgeFound`, the research warnings, the policy warnings
+   (`policy.ts`: refund outside 30 days, refund of an older payment, second refund, deletion without
+   cancellation or confirmation, cancel request proposed as immediate, vague reason without an
+   ask-first reply) and, for chargebacks, the Stripe timeline attachment. Then `ProposalSchema`
+   validates. Issues go back to the model; after three rejected submissions the run is `failed`, the
+   ticket shows `needs_decision` with the error on `agent_runs.error` and a re-run option.
+6. Write path (`store/db.ts`, one transaction): supersede the active proposal, insert the new
+   version with its actions, set the ticket fields (case, confidence, risk, due date, stage, customer
+   ids, context, tags, waiting_for), `researching → needs_decision`, translations of non-English
+   messages into `messages.translation`. Then `autonomy.evaluate(ticketId)` and, on `auto`,
+   `executor.runAuto(ticketId)`.
+
+Triggers: `new_ticket`, `customer_reply` (detects "Yes, refund" or a change of mind, stage 2),
+`case_override` (the case on the ticket is enforced), `rerun`, `follow_up`, `release_notification`
+(drafts the "it's live" email from the Linear issue in `release_notifications` and the original
+thread; drafted from the protocol until a "Release notification" template exists in Notion).
+
+### Knowledge
+
+`knowledge/loader.ts` reads Notion at runtime with `NOTION_READ_TOKEN` (`@notionhq/client`, data
+sources `dataSources.query`, page bodies `blocks.children.list`), caches for `KNOWLEDGE_CACHE_TTL_MS`
+(5 minutes) per process and falls back to the `docs/notion` snapshot (JSON imports plus
+`knowledge/protocol-snapshot.ts`, kept identical to `customer-support.md` by a test) when the token
+is missing or Notion fails. Examples: only `Status = Active` rows once the property exists. Knowledge
+base: `Status = Active` and `App = InstaRadar`; Draft and Outdated entries are never loaded. The KB
+is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it is filled.
+
+### Read-only tools and credentials
+
+| Source              | Adapter                                                                                                                                                                                                                             | Credential                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_READ_KEY`                                                    |
+| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_READ_URL`                                             |
+| Vercel logs         | `tools/vercel.ts`, see below                                                                                                                                                                                                        | `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_INSTARADAR_PROJECT_ID` |
+| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_READ_API_KEY`, `LINEAR_TEAM_ID`                              |
+| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_READ_TOKEN`                                                  |
+| Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                                 |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `AGENT_MODEL` default `claude-fable-5-1`, consistency check `AGENT_SMALL_MODEL` default `claude-sonnet-5`                                                             | `ANTHROPIC_API_KEY`                                                  |
+
+Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
+Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by
+`createFakeTools()`.
+
+**InstaRadar table names** are assumptions (the InstaRadar repository was not reachable):
+`public.profiles`, `public.tracked_profiles`, `public.scans`, `public.alerts`,
+`auth.audit_log_entries`, `public.blocked_profiles` with the columns listed in
+`DEFAULT_INSTARADAR_TABLES` (`server/agent/config.ts`). Override any of them with the
+`INSTARADAR_TABLES` JSON.
+
+**Vercel logs.** `VERCEL_LOGS_SOURCE=api` (default) reads the Runtime Logs endpoint
+`GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?teamId=…`
+(NDJSON, one entry per line; the production deployment id comes from
+`GET /v6/deployments?projectId=…&target=production&limit=1`) and filters by time, text, user id and
+profile handle. The endpoint is built for tailing and only returns a recent window. When that is not
+enough, set up a Vercel **log drain** (JSON format) that posts into the `vercel_logs` table added by
+`supabase/migrations/20260927010456_agent.sql` and set `VERCEL_LOGS_SOURCE=drain`; the agent then
+queries the table with plain SQL (`createLogDrainLogsClient`). The ingest route for the drain
+(`POST /api/webhooks/vercel-logs`, verifying `x-vercel-signature`) belongs to the webhooks folder of
+IRDR-455 and is requested from there.
+
+**Chargeback evidence.** `attachments/stripe-timeline.ts` renders the Stripe activity timeline
+deterministically as SVG (same input, same bytes) and stores it through `AttachmentStore`
+(Supabase Storage bucket `attachments` in production, memory otherwise); the reply draft carries it
+as `attachments[]` and the executor sends it from `storagePath`. No pure-JS SVG→PNG converter without
+native dependencies is installed, so the attachment is the SVG itself; add one (or a headless
+renderer) to attach a PNG.
+
+### Consistency check
+
+`POST /api/agent/consistency-check` (`server/agent/consistency.ts`) compares the reply text with the
+enabled actions: deterministic rules (refund, cancellation, coupon, release notice, Linear ticket,
+removal, deletion, retries, amounts, period-end wording, em dash) always run; with
+`ANTHROPIC_API_KEY` the small model adds judgement and the results are merged.
+
+### Evals and tests
+
+```bash
+pnpm eval                       # evals/plumbing.eval.ts: the 7 test cases + the 10 Notion examples with the
+                                # ScriptedModelClient and fake tools (runs in CI). evals/live.eval.ts runs the
+                                # same fixtures with the real model when ANTHROPIC_API_KEY is set, else skipped.
+LIVE_EVAL_ONLY=case-3 ANTHROPIC_API_KEY=… pnpm eval   # one live fixture
+pnpm test                       # tests/agent/**: credentials, knowledge, tools, two-stage, policy, context,
+                                # consistency, timeline, run behaviour (retries, failure path, partial failure)
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr456 pnpm test:db
+                                # tests/db/agent/**: write path, versions, failure path, two-stage across two runs,
+                                # job idempotency, translations, the agent migration
+```
+
+The eval checks case, risk, action set, stage, `requiredForReply`, confirmation stage, due date,
+attachment, linked Linear issue, knowledge refs and the no-em-dash rule (`evals/harness.ts`,
+`checkExpectations`). Fixtures live in `evals/fixtures/` and are shared with the unit tests.
+
+### Dev server
+
+`AUTH_DISABLED=true pnpm dev` without a database: `POST /api/tickets/:id/rerun` enqueues the job
+and, while the jobs service is still the stub, runs the agent inline; the run then fails fast with
+"Database is not configured" because the agent writes to Maelle's tables. With `SUPABASE_DB_URL`
+and `ANTHROPIC_API_KEY` set, the run is real; sources without credentials are skipped with a warning.
