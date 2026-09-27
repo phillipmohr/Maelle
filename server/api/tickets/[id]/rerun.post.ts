@@ -2,14 +2,14 @@
  * POST /api/tickets/:id/rerun — owner: IRDR-456. Enqueues an agent run (trigger `rerun`, or
  * `case_override` after the user picked a case) through the jobs service. While the jobs service is
  * still the foundation stub (nothing executes queued jobs), the run is started inline in the
- * background so the dev server stays useful.
+ * background so the dev server stays useful. `:id` is the ticket uuid or the display number.
  */
 import type { RerunRequest } from '#shared/api'
 import { isServiceRegistered, services } from '../../../utils/services'
+import { resolveTicketId } from '../../../utils/tickets'
 
 export default defineEventHandler(async (event) => {
-  const id = decodeURIComponent(getRouterParam(event, 'id') ?? '')
-  if (!id) throw createError({ statusCode: 400, statusMessage: 'Ticket id is required' })
+  const id = await resolveTicketId(getRouterParam(event, 'id') ?? '')
   const body =
     (await readBody<RerunRequest | null>(event).catch(() => null)) ?? ({} as RerunRequest)
   const trigger = body.trigger ?? 'rerun'

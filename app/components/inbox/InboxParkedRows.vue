@@ -22,7 +22,7 @@ const GRID =
 
 function detailLine(t: TicketListItem, now: Date): string {
   if (t.status === 'snoozed') return `Returns ${returnLabel(t.snoozedUntil, now)}`
-  const what = t.waitingFor ? `Waiting for “${t.waitingFor}”` : 'Waiting for a reply'
+  const what = t.waitingFor || 'Waiting for a reply'
   const queued = Math.max(t.actionCount - 1, 0)
   return `${what} since ${shortDate(t.lastMessageAt ?? t.updatedAt, now)}${
     queued > 0 ? ` · ${queued} queued` : ''

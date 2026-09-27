@@ -119,7 +119,7 @@ const barNote = computed(() => {
       return failedNote.value
     case 'waiting':
       return t?.waitingFor
-        ? `Waiting for “${t.waitingFor}” · queued actions run after the confirmation`
+        ? `${t.waitingFor} · queued actions run after the confirmation`
         : 'Waiting for the customer'
     case 'snoozed':
       return 'Snoozed · it comes back on its own, or now'

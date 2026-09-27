@@ -65,6 +65,7 @@ export interface TicketRow {
   riskReason: string | null
   dueDate: string | null
   stage: 1 | 2
+  /** Full sentence written by the executor, e.g. 'Waiting for “Yes, refund”'. Shown verbatim. */
   waitingFor: string | null
   snoozedUntil: string | null
   tags: string[]
