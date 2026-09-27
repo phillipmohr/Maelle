@@ -1,23 +1,72 @@
 <script setup lang="ts">
-/** Activity log. Owner: IRDR-459 (screen 2c). Foundation placeholder over the stubbed route. */
-import type { ActivityResponse } from '#shared/api'
-import { actionLabel } from '#shared/actions'
-import { clockTime, dayLabel } from '~/utils/format'
+/** Activity log. Owner: IRDR-459 (screen 2c). */
+import type { ActivityResponse, ExecutedBy } from '#shared/api'
+import type { ActivityEntry } from '~/components/activity/Row.vue'
 
 useHead({ title: 'Activity log' })
-const filter = ref<'all' | 'you' | 'auto'>('all')
-const { data } = await useFetch<ActivityResponse>('/api/activity', { key: 'activity' })
-const items = computed(() =>
-  (data.value?.items ?? []).filter((i) => filter.value === 'all' || i.executedBy === filter.value),
+
+const by = ref<ExecutedBy | 'all'>('all')
+const irreversibleOnly = ref(false)
+const PAGE = 100
+
+const query = computed(() => ({
+  by: by.value === 'all' ? undefined : by.value,
+  irreversibleOnly: irreversibleOnly.value ? 'true' : undefined,
+  limit: PAGE,
+}))
+
+const { data, status } = await useFetch<ActivityResponse>('/api/activity', {
+  key: 'activity',
+  query,
+})
+
+/** Pages after the first, appended by "Load more"; reset when the filters change. */
+const more = ref<ActivityResponse[]>([])
+const loadingMore = ref(false)
+watch(query, () => (more.value = []))
+
+const pages = computed(() => (data.value ? [data.value, ...more.value] : []))
+const nextCursor = computed(() => pages.value.at(-1)?.nextCursor ?? null)
+
+const entries = computed<ActivityEntry[]>(() =>
+  pages.value
+    .flatMap((p) => [
+      ...p.items.map((item): ActivityEntry => ({
+        kind: 'execution',
+        at: item.createdAt,
+        id: item.id,
+        item,
+      })),
+      ...(p.settings ?? []).map((item): ActivityEntry => ({
+        kind: 'settings',
+        at: item.createdAt,
+        id: `s-${item.id}`,
+        item,
+      })),
+    ])
+    .sort((a, b) => b.at.localeCompare(a.at)),
 )
-const days = computed(() => {
-  const map = new Map<string, typeof items.value>()
-  for (const i of items.value) {
-    const d = new Date(i.createdAt).toDateString()
-    if (!map.has(d)) map.set(d, [])
-    map.get(d)!.push(i)
+
+async function loadMore() {
+  const cursor = nextCursor.value
+  if (!cursor || loadingMore.value) return
+  loadingMore.value = true
+  try {
+    more.value = [
+      ...more.value,
+      await $fetch<ActivityResponse>('/api/activity', { query: { ...query.value, cursor } }),
+    ]
+  } finally {
+    loadingMore.value = false
   }
-  return [...map.entries()]
+}
+
+const exportHref = computed(() => {
+  const params = new URLSearchParams()
+  if (by.value !== 'all') params.set('by', by.value)
+  if (irreversibleOnly.value) params.set('irreversibleOnly', 'true')
+  const qs = params.toString()
+  return `/api/activity/export.csv${qs ? `?${qs}` : ''}`
 })
 </script>
 
@@ -30,80 +79,19 @@ const days = computed(() => {
           Every action that ran, in order. Irreversible actions in ember.
         </p>
       </div>
-      <div class="flex items-center gap-[10px]">
-        <SegmentedControl
-          v-model="filter"
-          :options="[
-            { value: 'all', label: 'All' },
-            { value: 'you', label: 'You' },
-            { value: 'auto', label: 'Auto' },
-          ]"
-          aria-label="Filter by who ran it"
-        />
-        <Button variant="secondary" size="sm" to="/api/activity/export.csv">Export CSV</Button>
-      </div>
+      <ActivityToolbar
+        v-model:by="by"
+        v-model:irreversible-only="irreversibleOnly"
+        :export-href="exportHref"
+      />
     </div>
-    <Panel>
-      <div
-        class="grid grid-cols-[64px_minmax(0,1.2fr)_minmax(0,1.3fr)_70px_80px_120px] gap-[18px] px-5 py-3 type-eyebrow text-fg-muted"
+
+    <ActivityTable :entries="entries" :loading="status === 'pending'" />
+
+    <div v-if="nextCursor" class="flex justify-center">
+      <Button variant="secondary" size="sm" :loading="loadingMore" @click="loadMore"
+        >Load more</Button
       >
-        <span>Time</span><span>Action</span><span>Parameters</span><span>Ticket</span><span>By</span
-        ><span>Result</span>
-      </div>
-      <template v-for="[day, rows] in days" :key="day">
-        <div class="border-t border-line bg-page px-5 pb-2 pt-[14px]">
-          <Eyebrow>{{ dayLabel(day) }}</Eyebrow>
-        </div>
-        <div
-          v-for="r in rows"
-          :key="r.id"
-          class="grid grid-cols-[64px_minmax(0,1.2fr)_minmax(0,1.3fr)_70px_80px_120px] items-center gap-x-[18px] gap-y-[6px] border-t border-line px-5 py-[11px]"
-        >
-          <Mono>{{ clockTime(r.createdAt) }}</Mono>
-          <span
-            class="flex items-center text-body font-semibold"
-            :class="r.irreversible ? 'text-ember' : 'text-fg'"
-            ><LockShape v-if="r.irreversible" class="mr-[6px]" />{{ actionLabel(r.type) }}</span
-          >
-          <Mono class="truncate">{{ Object.values(r.params).map(String).join(' · ') }}</Mono>
-          <NuxtLink
-            :to="`/anastasai/t/${r.ticketDisplayNumber}`"
-            class="font-mono text-caption text-fg-muted"
-            >#{{ r.ticketDisplayNumber }}</NuxtLink
-          >
-          <span class="flex items-center gap-2 text-small"
-            ><RiskDot v-if="r.executedBy === 'auto'" kind="auto" />{{
-              r.executedBy === 'auto' ? 'Auto' : 'You'
-            }}</span
-          >
-          <StatusPill
-            :status="
-              r.status === 'succeeded'
-                ? 'success'
-                : r.status === 'failed'
-                  ? 'error'
-                  : r.status === 'held'
-                    ? 'warning'
-                    : 'info'
-            "
-          >
-            {{
-              r.status === 'succeeded'
-                ? r.type === 'send_reply'
-                  ? 'Sent'
-                  : 'Succeeded'
-                : r.status === 'failed'
-                  ? 'Failed'
-                  : r.status === 'held'
-                    ? 'Held'
-                    : r.status
-            }}
-          </StatusPill>
-          <span v-if="r.error" class="col-start-2 col-end-7 font-mono text-[11.5px] text-brick">{{
-            r.error
-          }}</span>
-        </div>
-      </template>
-    </Panel>
+    </div>
   </div>
 </template>

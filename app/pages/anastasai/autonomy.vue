@@ -1,11 +1,45 @@
 <script setup lang="ts">
-/** Autonomy page. Owner: IRDR-459 (screen 1h). Foundation placeholder with the shell in place. */
-import type { AutonomyResponse } from '#shared/api'
-import { caseShortLabel } from '#shared/case-types'
-import { actionLabel } from '#shared/actions'
+/** Autonomy page. Owner: IRDR-459 (screen 1h). */
+import type { AutonomyMode, AutonomyResponse, AutonomyUpdateRequest } from '#shared/api'
+import type { CaseType } from '#shared/case-types'
+import { useToast } from '~/composables/useToast'
 
 useHead({ title: 'Autonomy' })
 const { data } = await useFetch<AutonomyResponse>('/api/autonomy', { key: 'autonomy' })
+const toast = useToast()
+const busy = ref(false)
+
+function errorMessage(e: unknown): string {
+  const err = e as {
+    data?: { statusMessage?: string; message?: string }
+    statusMessage?: string
+    message?: string
+  }
+  return (
+    err?.data?.statusMessage ??
+    err?.data?.message ??
+    err?.statusMessage ??
+    err?.message ??
+    'Unknown error'
+  )
+}
+
+async function update(patch: AutonomyUpdateRequest, fallbackLabel: string) {
+  busy.value = true
+  try {
+    const res = await $fetch<AutonomyResponse>('/api/autonomy', { method: 'PUT', body: patch })
+    data.value = res
+    const summary = res.changes?.map((c) => c.summary).join(' · ')
+    toast.info(summary ? 'Saved' : 'Nothing changed', summary || fallbackLabel)
+  } catch (e) {
+    toast.error('Not saved', errorMessage(e))
+  } finally {
+    busy.value = false
+  }
+}
+
+const setMode = (caseType: CaseType, mode: AutonomyMode) =>
+  update({ modes: { [caseType]: mode } }, `${caseType} → ${mode}`)
 </script>
 
 <template>
@@ -18,90 +52,47 @@ const { data } = await useFetch<AutonomyResponse>('/api/autonomy', { key: 'auton
           move each case to Auto once its record earns it.
         </p>
       </div>
-      <div
+      <AutonomyStatusBar
         v-if="data"
-        class="flex items-center gap-4 rounded-lg border border-line bg-base py-3 pl-[18px] pr-[14px]"
-      >
-        <div class="flex flex-col gap-[2px]">
-          <span class="flex items-center gap-2 text-small font-semibold"
-            ><RiskDot :kind="data.settings.globalPause ? 'failed' : 'done'" />{{
-              data.settings.globalPause ? 'Automation paused' : 'Automation running'
-            }}</span
-          >
-          <span class="text-caption text-fg-muted"
-            >{{ data.onAutoCount }} case type{{ data.onAutoCount === 1 ? '' : 's' }} on Auto ·
-            {{ data.alwaysAskCount }} on Always ask</span
-          >
-        </div>
-        <Button variant="secondary" size="sm">{{
-          data.settings.globalPause ? 'Resume' : 'Pause all'
-        }}</Button>
-      </div>
+        :global-pause="data.settings.globalPause"
+        :on-auto-count="data.onAutoCount"
+        :always-ask-count="data.alwaysAskCount"
+        :busy="busy"
+        @pause="update({ settings: { globalPause: true } }, 'Pause all: on')"
+        @resume="update({ settings: { globalPause: false } }, 'Pause all: off')"
+      />
     </div>
 
-    <Panel v-if="data">
-      <div
-        class="grid grid-cols-[minmax(0,1.3fr)_290px_minmax(0,1fr)_300px] gap-5 border-b border-line px-5 py-3 type-eyebrow text-fg-muted"
-      >
-        <span>Case type</span><span>Last 30 tickets</span><span>Recommendation</span
-        ><span>Mode</span>
-      </div>
-      <div class="divide-hairline">
-        <div
-          v-for="c in data.cases"
-          :key="c.caseType"
-          class="grid grid-cols-[minmax(0,1.3fr)_290px_minmax(0,1fr)_300px] items-center gap-5 px-5 py-[14px]"
-        >
-          <div class="flex flex-col gap-[2px]">
-            <span class="text-body font-semibold">{{ caseShortLabel(c.caseType) }}</span>
-            <span class="text-caption text-fg-muted">{{
-              c.typicalActions.map(actionLabel).join(' · ')
-            }}</span>
-          </div>
-          <div class="flex flex-col gap-[6px]">
-            <div class="flex gap-[2px]">
-              <span
-                v-for="(k, i) in 30"
-                :key="i"
-                class="h-[14px] w-[5px] rounded-[1px]"
-                :class="
-                  c.ticks[i] === 'unchanged'
-                    ? 'bg-sage'
-                    : c.ticks[i] === 'edited'
-                      ? 'bg-gilt'
-                      : c.ticks[i] === 'rejected'
-                        ? 'bg-brick'
-                        : 'bg-umber-700'
-                "
-              />
-            </div>
-            <Mono class="text-[11px]"
-              >{{ c.total }} tickets · {{ c.unchanged }} unchanged · {{ c.edited }} edited ·
-              {{ c.rejected }} rejected</Mono
-            >
-          </div>
-          <div
-            class="flex items-center gap-[10px] text-small"
-            :class="c.recommendationKind === 'ready' ? 'text-fg' : 'text-fg-muted'"
-          >
-            <span
-              class="size-[7px] shrink-0 rotate-45"
-              :class="c.recommendationKind === 'ready' ? 'bg-gilt' : 'bg-umber-700'"
-            />{{ c.recommendation }}
-          </div>
-          <SegmentedControl
-            :model-value="c.mode"
-            :options="[
-              { value: 'always_ask', label: 'Always ask' },
-              { value: 'auto', label: 'Auto' },
-            ]"
-            aria-label="Mode"
+    <template v-if="data">
+      <AutonomyTable
+        :cases="data.cases"
+        :undo-window-minutes="data.settings.undoWindowMinutes"
+        :busy="busy"
+        @mode="setMode"
+      />
+
+      <div class="grid grid-cols-[560px_minmax(0,1fr)] items-start gap-6">
+        <AutonomySafetyNet
+          :settings="data.settings"
+          :busy="busy"
+          @update="(p) => update(p, 'Settings')"
+        />
+        <div class="flex flex-col gap-6">
+          <AutonomyLocks :locks="data.locks" :busy="busy" @update="(p) => update(p, 'Locks')" />
+          <AutonomyLimits
+            :settings="data.settings"
+            :busy="busy"
+            @update="(p) => update(p, 'Limits')"
           />
         </div>
       </div>
-      <div class="border-t border-line px-5 py-3 text-small text-fg-muted">
-        Full page with settings, locks and audit trail in IRDR-459.
-      </div>
-    </Panel>
+
+      <p class="text-caption text-fg-muted">
+        Every change is recorded in the audit trail ·
+        <NuxtLink to="/anastasai/activity" class="text-fg-muted underline-offset-3 hover:text-fg"
+          >View activity log</NuxtLink
+        >
+      </p>
+    </template>
   </div>
 </template>

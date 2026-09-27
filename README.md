@@ -148,3 +148,81 @@ Every integration uses the narrowest key that can do its job. Names are in `.env
 Vercel picks up the Nuxt build automatically (`pnpm build`). Set the variables from `.env.example`
 in the Vercel project (preview and production). Cron schedules are added by the mail/jobs ticket
 (`vercel.json` or Supabase cron, see `docs/adr/001-jobs.md`).
+
+## IRDR-459: Autonomy, activity log, playbook, notifications, learning loop
+
+Owner folders: `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`,
+`server/api/activity/`, `server/api/playbook.get.ts`, `server/api/learning/`, `server/plugins/autonomy.ts`,
+`app/components/{autonomy,activity,playbook}/`, the three pages, `tests/autonomy/`, `tests/db/autonomy/`.
+Migration `supabase/migrations/20260927010459_autonomy.sql` adds `settings_audit`, `notifications` and
+`learning_events` (RLS, allow-list policy). Shared additions: `shared/autonomy.ts` (rules, zod schema
+for PUT, audit summaries), `shared/activity.ts` (parameter and result formatting), optional fields merged
+into `ActivityResponse`, `AutonomyResponse`, `PlaybookResponse` and `LearningResponse`.
+
+### Autonomy page (`/anastasai/autonomy`, screen 1h)
+
+- `GET /api/autonomy`: track record per template case type from the last 30 decisions
+  (`decisions` joined with `tickets.case_type`; snoozed and marked_done are not verdicts), undo counts
+  (Auto executions cancelled inside the undo window since the case went on Auto), settings, modes,
+  effective locks. Recommendation rules, in order: on Auto (`On Auto since <date> · N undos`),
+  irreversible actions, any rejection, fewer than 15 tickets (`Collecting · N more tickets`), at least
+  90% unchanged (`Ready for Auto`), otherwise too many edits. Case types with fewer than 5 tickets
+  collapse into one row. Without a database the seed answers (header `x-maelle-stub`).
+- `PUT /api/autonomy` (`AutonomyUpdateRequest`, validated with `AutonomyUpdateSchema`): modes, locks and
+  settings in one transaction, one `settings_audit` row per real change (who = session email, what,
+  from, to). 503 without a database. Pause all is `settings.global_pause`; the rail note follows it.
+- Locks: Refund latest payment, Cancel immediately and Delete account are locked by default
+  (`ACTIONS[type].lockedByDefault` when no `action_locks` row exists).
+
+### Auto path
+
+`services.autonomy.evaluate(ticketId)` returns `'auto'` only when the case is on Auto, global pause
+is off, neither the ticket nor the proposal is high risk or safety, the case is not unclear, the
+proposal has no policy warnings, no customer confirmation is pending (stage 1), and no enabled action
+is locked. Otherwise `'ask'`. The agent calls `services.executor.runAuto(ticketId)` on `'auto'`;
+evaluate never executes anything. A safety or high-risk ticket triggers `notify('high_risk_ticket')`
+once per ticket (deduped in `notifications`) on its way to `'ask'`. `evaluateDetailed()` exposes the
+reason for logs and tests.
+
+### Activity log (`/anastasai/activity`, screen 2c)
+
+`GET /api/activity`: `action_executions` joined with tickets, filters `by=you|auto`,
+`irreversibleOnly=true`, `from`, `to`, cursor pagination (`created_at desc, id desc`, `nextCursor`),
+plus `settings` (the `settings_audit` rows of the same time range, shown as "Settings" entries).
+`GET /api/activity/export.csv` takes the same filters and exports every matching row.
+
+### Playbook (`/anastasai/playbook`)
+
+Read-only links into Notion: protocol sections, the 17 templates with actions and "Confirm first",
+Examples and Knowledge Base counts (live through `NOTION_READ_TOKEN`, cached five minutes; snapshot
+counts otherwise, `liveCounts` says which).
+
+### Notifications
+
+`services.notify(kind, payload)` sends plain-text mail to `settings.notify_email`, else
+`NOTIFY_EMAIL`, through `services.mail.sendSystemEmail`, and logs every attempt in `notifications`
+(`pending`, `sent`, `failed`, `skipped`). `high_risk_ticket` is deduped per ticket, `daily_digest`
+per local day (`digest:YYYY-MM-DD` in the settings timezone), `system_alert` always sends. The
+`daily_digest` job handler is registered in `server/plugins/autonomy.ts`; the digest covers
+everything since the last sent digest: handled automatically, needs a decision, waiting, failed actions.
+
+### Learning loop
+
+- Notion writes go through `NotionWriter` (`server/learning/notion-writer.ts`): the real adapter uses
+  `NOTION_WRITE_TOKEN` (insert only), the in-memory fake serves tests and every environment without
+  the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, `AGENT_SMALL_MODEL`, default
+  `claude-sonnet-5`) with a deterministic fallback (first sentences of the reply).
+- `POST /api/learning/example { ticketId }`: Draft page in the Examples DB (Name, Category, Customer
+  message, Response, Status Draft). `POST /api/learning/kb-draft { ticketId }`: Draft page in the
+  Knowledge Base (Name, Category, Type, Customer phrasing, Short answer, App InstaRadar, Status Draft,
+  Related templates). Both return `{ notionPageId, url }`, are idempotent per ticket
+  (`learning_events`), and need the ticket from the database (503 offline).
+- The Examples data source got a `Status` select (Active, Draft) on 2026-09-27; the existing 10
+  examples are Active. New examples arrive as Draft and are only used once Phillip sets them to Active.
+
+### Tests
+
+```bash
+pnpm test                                        # tests/autonomy: rules, evaluate guards, notify, activity, learning
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr459 pnpm test:db
+```
