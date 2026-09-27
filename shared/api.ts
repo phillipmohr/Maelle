@@ -440,3 +440,48 @@ export const ROUTES: readonly RouteSpec[] = [
 
 /** Proposal shape as the agent produces it, re-exported for API consumers. */
 export type { Proposal }
+
+// ---------------------------------------------------------------- IRDR-459 additions (appended; interface merges add optional fields only)
+
+export type SettingsAuditScope = 'setting' | 'mode' | 'lock'
+
+/** One row of `settings_audit`: who changed what, from which value to which. */
+export interface SettingsAuditItem {
+  id: string
+  createdAt: string
+  changedBy: string
+  scope: SettingsAuditScope
+  key: string
+  oldValue: unknown
+  newValue: unknown
+  /** "Cancellation only: Always ask → Auto" */
+  summary: string
+}
+
+export interface ActivityResponse {
+  /** Settings changes in the same time range as `items`, shown as "Settings" entries. */
+  settings?: SettingsAuditItem[]
+}
+
+export interface ActivityQuery {
+  /** Default true for All / You; never with `by=auto` or `irreversibleOnly`. */
+  includeSettings?: boolean
+}
+
+export interface PlaybookResponse {
+  /** True when the counts were read from Notion (NOTION_READ_TOKEN), false for the snapshot. */
+  liveCounts?: boolean
+  examplesStatus?: { active: number; draft: number }
+}
+
+export interface LearningResponse {
+  /** True when the page had already been created for this ticket and kind (idempotent). */
+  existing?: boolean
+  /** 'notion' through the Notion API, 'fake' when NOTION_WRITE_TOKEN is missing. */
+  writer?: 'notion' | 'fake'
+}
+
+export interface AutonomyResponse {
+  /** After PUT: the audit rows this request wrote (empty when nothing changed). */
+  changes?: SettingsAuditItem[]
+}
