@@ -1,11 +1,11 @@
-/** POST /api/tickets/:id/mark-done — owner: IRDR-457. Stub: note required. */
-import type { MarkDoneRequest } from '#shared/api'
-import { stubHeaders } from '../../../utils/stubs'
+/** POST /api/tickets/:id/mark-done — owner: IRDR-457. Note required; resolution marked_done. */
+import { handled, readValidatedBody, ticketParam, useExecutor } from '../../../executor/http'
+import { MarkDoneBodySchema } from '../../../executor/schemas'
 
 export default defineEventHandler(async (event) => {
-  stubHeaders(event, 'IRDR-457')
-  const body = await readBody<MarkDoneRequest>(event)
-  if (!body?.note?.trim())
-    throw createError({ statusCode: 400, statusMessage: 'A note is required' })
-  return { ok: true as const, ticketStatus: 'closed', resolution: 'marked_done' }
+  const id = ticketParam(event)
+  const executor = useExecutor()
+  const body = await readValidatedBody(event, MarkDoneBodySchema)
+  const r = await handled(event, () => executor.markDoneTicket(id, body.note))
+  return { ok: true as const, ticketStatus: r.ticketStatus, resolution: r.resolution }
 })

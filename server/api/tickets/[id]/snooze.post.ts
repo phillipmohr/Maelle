@@ -1,21 +1,11 @@
-/** POST /api/tickets/:id/snooze — owner: IRDR-457. Stub: refuses safety tickets like the real one. */
-import type { SnoozeRequest } from '#shared/api'
-import { seedTicketDetail } from '#shared/seed/views'
-import { seedBundle, stubHeaders } from '../../../utils/stubs'
+/** POST /api/tickets/:id/snooze — owner: IRDR-457. Safety tickets cannot be snoozed (422). */
+import { handled, readValidatedBody, ticketParam, useExecutor } from '../../../executor/http'
+import { SnoozeBodySchema } from '../../../executor/schemas'
 
 export default defineEventHandler(async (event) => {
-  stubHeaders(event, 'IRDR-457')
-  const id = decodeURIComponent(getRouterParam(event, 'id') ?? '')
-  const detail = seedTicketDetail(seedBundle(), id)
-  if (!detail) throw createError({ statusCode: 404, statusMessage: 'Ticket not found' })
-  if (detail.ticket.riskLevel === 'safety')
-    throw createError({ statusCode: 422, statusMessage: 'Safety tickets cannot be snoozed' })
-  const body = await readBody<SnoozeRequest>(event)
-  if (!body?.until || Number.isNaN(Date.parse(body.until)))
-    throw createError({ statusCode: 400, statusMessage: 'until must be an ISO timestamp' })
-  return {
-    ok: true as const,
-    ticketStatus: 'snoozed',
-    snoozedUntil: new Date(body.until).toISOString(),
-  }
+  const id = ticketParam(event)
+  const executor = useExecutor()
+  const body = await readValidatedBody(event, SnoozeBodySchema)
+  const r = await handled(event, () => executor.snoozeTicket(id, new Date(body.until)))
+  return { ok: true as const, ticketStatus: r.ticketStatus, snoozedUntil: r.snoozedUntil }
 })
