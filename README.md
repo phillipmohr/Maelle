@@ -226,3 +226,45 @@ everything since the last sent digest: handled automatically, needs a decision, 
 pnpm test                                        # tests/autonomy: rules, evaluate guards, notify, activity, learning
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr459 pnpm test:db
 ```
+
+## IRDR-458: inbox, ticket detail, decision bar and keyboard flow
+
+The AnastasAI screens from the design (1b to 1f, 3a and 3b), built from the shared components.
+
+- `app/pages/anastasai/index.vue` is the inbox: the lit "Needs decision" table (safety, then high
+  risk, then the oldest first), parked rows (Waiting on customer, Snoozed, collapsed with Show),
+  "Handled automatically" with Undo (only when tickets sit in the undo window), and the closed
+  history with All / Approved / Edited / Rejected / Manual / Auto, F for case and date range, day
+  groups and infinite scroll. `?preview=cleared` renders the cleared state (3b) in `nuxt dev`.
+- `app/pages/anastasai/t/[id].vue` is the ticket: rail · list · detail · customer context. The
+  proposal is the only lit surface; actions are a checklist with editable parameters and "+ Add
+  action" from the registry; the reply draft has an editor (E, ⌘⏎ approves) and a check line; the
+  research shows evidence tables and log lines on demand; the decision bar has the normal, confirm
+  (ember, "Press A again") and failed modes plus the parked, researching, unclear, manual, auto
+  and closed variants. A closed row opens read only (outcome, sent reply, audit trail).
+- Components live in `app/components/inbox/` and `app/components/ticket/`; the view models and
+  the decision state machine in `app/composables/useInboxRows.ts`, `useInboxFilters.ts`,
+  `useTicketModel.ts`, `useTicketParams.ts`, `useTicketDecision.ts` (pure factory plus the Nuxt
+  wrapper), data access in `useTickets.ts`, Realtime in `useRealtime.ts`.
+- `GET /api/tickets` and `GET /api/tickets/:id` read the database when `SUPABASE_DB_URL` (or
+  `TEST_DATABASE_URL`) is set, through `shared/ticket-repository.ts`, which feeds the DB rows to the
+  same seed views the offline stub uses, so both modes agree. Without a database they answer from
+  the seed. List semantics: no `status` returns every ticket, open first, then closed by
+  `closed_at desc` (the palette search covers everything); `status=closed` is the paginated
+  history (`cursor`, `nextCursor`, `closed_at desc, id desc`); `status=a,b` filters; `q`,
+  `caseType`, `resolution`, `from`, `to`, `limit` as in `TicketListQuery`.
+- Keyboard: J/K, ⏎ open (inbox) or retry (failed ticket), A approve (twice for irreversible
+  actions), E edit, ⌘⏎ approve from the editor, Esc back or cancel, R reject (1 to 4 pick the
+  reason), S snooze or unsnooze (1 to 3 pick a preset), M mark as done, F filters, ? shortcuts,
+  ⌘K commands (approve, edit, reject, snooze, change case, re-run research, retry, mark done,
+  unsnooze, undo, focus mode, context panel). Focus follows the selection so it is always visible.
+- Decision API errors: 409 `confirm_required` enters confirm mode, 409 stale reloads the ticket,
+  422 warns (safety), 501 says "Not available yet", network errors say so in plain words. After an
+  approval with edits or a manual send the toast offers "Save as example?", after a proposal with
+  `noKnowledgeFound` it offers "Create KB draft" (learning endpoints, IRDR-459).
+- Realtime (`useRealtime`) subscribes to `tickets`, `agent_runs` and `action_executions` only when
+  `runtimeConfig.public.supabase.url` is a real https URL; with the local placeholder it is a no-op.
+- Tests: `tests/ui/` (view models, filters, params, the decision state machine and the keyboard
+  flow under happy-dom) run with `pnpm test`; `tests/db/tickets/` run the list and detail queries
+  against the seeded local Postgres with
+  `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr458 pnpm test:db`.
