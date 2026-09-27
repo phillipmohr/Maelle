@@ -148,3 +148,107 @@ Every integration uses the narrowest key that can do its job. Names are in `.env
 Vercel picks up the Nuxt build automatically (`pnpm build`). Set the variables from `.env.example`
 in the Vercel project (preview and production). Cron schedules are added by the mail/jobs ticket
 (`vercel.json` or Supabase cron, see `docs/adr/001-jobs.md`).
+
+## IRDR-457 · Executor: decision API, the 11 actions, idempotency, audit log
+
+The executor (`server/executor/`) is the only code that changes anything: Stripe, InstaRadar data,
+Linear, outgoing email, ticket state. The UI and Auto mode call the same decision API
+(`server/api/tickets/[id]/*.post.ts`); the server never trusts the UI. `server/plugins/executor.ts`
+registers it as `services.executor` and registers the `run_due_scheduled` job handler.
+
+### Flow
+
+1. **Decide** (one transaction, ticket row locked): status must allow the step (`transition()` from
+   `shared/status.ts`), the proposal version must match, every action must be in the registry with
+   valid params (shared zod schemas), an enabled irreversible `now` action needs
+   `confirmIrreversible: true` (otherwise HTTP 409 with `{ error: 'confirm_required', irreversible }`).
+   The `decisions` row is written (`approved` / `approved_with_edits` with `reply_diff` and
+   `action_changes`, `time_to_decide_ms`), the `action_executions` rows are inserted-or-fetched by
+   idempotency key, the ticket moves to `executing`.
+2. **Run** (outside the transaction, one UPDATE per status change so Realtime shows progress): actions
+   in registry order, Send reply last. A failure never stops an independent action. The reply is
+   `held` only while an action with `required_for_reply` has not succeeded; otherwise it still sends.
+   Auto runs schedule the reply (`scheduled`, `scheduled_for = now + undo window`) instead of sending.
+3. **Finish** (one transaction): `closed` (resolution `approved`, `approved_with_edits`, `auto`,
+   `handled_manually`, `rejected`, `closed_no_reply`), `action_failed` (any failure), `waiting_on_customer`
+   (stage 1 with queued `after_confirmation` actions; `waiting_for` = "Waiting for “Yes, refund”") or
+   `auto_pending` (Auto, until `runDueScheduled` sends the reply or `undo` cancels it).
+
+### Idempotency and retries
+
+- Base key `executionIdempotencyKey(ticketId, proposalVersion, position)`; manual sends use
+  `<ticketId>:m<decisionId>:p<position>`. `action_executions.idempotency_key` is unique.
+- A retry writes a **new row** with `attempt + 1` and the suffix `:a<attempt>` (as the seed shows for
+  #4812); the failed row stays for the audit trail. Held rows are reused. Every external call uses
+  the **base** key, so Stripe replays the first refund or cancellation, Linear is searched for the
+  marker `Maelle ticket #<n>` before creating an issue or comment, and mail gets the same
+  `idempotencyKey`. Refunds also carry `metadata.maelle_key`, so a retry after a lost response finds
+  its own refund instead of creating a second one.
+- Double submits of approve or retry are refused with 409: the second request finds the ticket no
+  longer waiting (row lock + status machine).
+- The UI should group executions by position (`idempotency_key` without the `:a<n>` suffix) and show
+  the highest attempt.
+
+### Errors for the UI
+
+Plain words, then provider detail, then what did not happen, then the request id:
+`Stripe: rate_limit (429) · nothing was charged or refunded · req_Qx91Lm`. Precondition failures read
+`Not the latest payment: ch_… from Sep 20 is newer · nothing was charged or refunded`. Never an em dash.
+
+### External systems
+
+Each system sits behind an interface with a real adapter and an in-memory fake
+(`server/executor/clients/`). A real adapter is constructed only when its credential is set. Without
+one, `nuxt dev` and tests use the fakes; production gets a client whose calls fail with
+`<Provider>: not_configured` so nothing is ever pretended. `EXECUTOR_USE_FAKES` overrides this.
+
+| Variable                                                          | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRIPE_WRITE_KEY`                                                | cancel, refund, stop retries, coupons, cancellation details | Restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
+| `INSTARADAR_DB_WRITE_URL`                                         | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on the tracked-profiles table and on each table in `INSTARADAR_USER_TABLES`; `statement_timeout 20s`; no other grants.                                                                                                                                                                         |
+| `INSTARADAR_SUPABASE_URL`, `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`). Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                                                                       |
+| `LINEAR_WRITE_API_KEY`, `LINEAR_TEAM_ID` or `LINEAR_TEAM_NAME`    | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the team, labels `Bug`/`Feature`, and the marker). Team InstaRadar.                                                                                                                                                                                                                                                                                               |
+| `SUPABASE_DB_URL`                                                 | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                     |
+
+Mail goes through `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })` (IRDR-455).
+
+### Actions and their live checks
+
+`cancel_at_period_end` (returns the access end date; already scheduled or cancelled is reported, not
+failed) · `cancel_immediately` (InstaRadar deletes the tracked profiles through its
+`customer.subscription.deleted` webhook, assumption A1 in `docs/instaradar/README.md`) ·
+`refund_latest_payment` (latest succeeded charge of the customer only, not already refunded, amount ≤
+payment, daily count and amount limits from `settings`, in `settings.timezone`) · `delete_account`
+(no active subscription, explicit customer confirmation: stage 2, confirmation found in the thread,
+or the approver's note says "confirmed"; email must match the auth user) · `stop_failed_payment_retries`
+(cancelled or inactive subscriptions only; open invoices are marked uncollectible, falling back to
+`auto_advance: false`) · `create_coupon` (applied to the subscription or a one-use promotion code
+`IR-XXXXXX` for the reply) · `create_linear_ticket` (label Bug/Feature, description ends with
+"Customer to notify once released: <email>" and the marker; an existing issue gets one comment with
+the same line) · `store_release_notification_email` · `store_cancellation_reason` (Maelle row plus
+Stripe `cancellation_details` while the subscription is not cancelled) · `remove_from_tracking`
+(InstaRadar blocklist plus tracking rows removed) · `send_reply`.
+
+### Auto
+
+`executor.runAuto(ticketId)` refuses when the global pause is on, the ticket or proposal risk is
+`high` or `safety`, the case is `unclear`, the proposal has policy warnings, a customer confirmation
+is pending, the proposal has no reply, or any enabled action is locked (`action_locks`, or
+`lockedByDefault` without a row). Otherwise it approves as `auto`: actions run now, the reply is
+scheduled after `settings.undo_window_minutes`, the ticket is `auto_pending`. `runDueScheduled()`
+(job `run_due_scheduled`) sends due replies and closes the tickets (resolution `auto`); a failed send
+returns the ticket to `needs_decision` with the proposal active. `undo` cancels the scheduled reply,
+returns the ticket to `needs_decision` and lists what already ran (also stored on the cancelled row).
+
+### Tests
+
+```bash
+pnpm test                       # tests/executor: every action against the fakes, planner, errors, clients
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr457 pnpm test:db
+```
+
+`tests/db/executor/` clones the seeded test database into its own database per file (so the
+foundation's schema assertions never race with these mutations) and runs the flows on the design's
+tickets: #4824 routine approve, #4809 confirm + irreversible, #4822 stage 1, #4820 retry of a failed
+required action, plus edits, partial failures, reject, manual send, snooze, mark done, case override,
+Auto refusals, Auto run, undo, due scheduled sends and the refund limits.
