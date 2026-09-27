@@ -1,33 +1,16 @@
-/** POST /api/tickets/:id/manual-send — owner: IRDR-457. Stub. */
-import type { ApproveResponse, ManualSendRequest } from '#shared/api'
-import { isActionType } from '#shared/actions'
-import { stubHeaders } from '../../../utils/stubs'
+/**
+ * POST /api/tickets/:id/manual-send — owner: IRDR-457. Runs the chosen actions and sends the
+ * hand-written reply; resolution handled_manually ("I'll handle it") or rejected.
+ */
+import type { ApproveResponse, ConfirmRequiredResponse } from '#shared/api'
+import { handled, readValidatedBody, ticketParam, useExecutor } from '../../../executor/http'
+import { ManualSendBodySchema } from '../../../executor/schemas'
 
-export default defineEventHandler(async (event): Promise<ApproveResponse> => {
-  stubHeaders(event, 'IRDR-457')
-  const body = await readBody<ManualSendRequest>(event)
-  if (!body?.reply?.body?.trim() || !body.reply.to)
-    throw createError({ statusCode: 400, statusMessage: 'reply.to and reply.body are required' })
-  for (const a of body.actions ?? []) {
-    if (!isActionType(a.type))
-      throw createError({ statusCode: 400, statusMessage: `Unknown action ${String(a.type)}` })
-  }
-  return {
-    decisionId: `stub-manual-${getRouterParam(event, 'id')}`,
-    ticketStatus: 'closed',
-    executions: [
-      ...(body.actions ?? []).map((a, i) => ({
-        executionId: `stub-exec-${i}`,
-        type: a.type,
-        status: 'succeeded' as const,
-        result: { stub: true },
-      })),
-      {
-        executionId: 'stub-exec-reply',
-        type: 'send_reply' as const,
-        status: 'succeeded' as const,
-        result: { stub: true },
-      },
-    ],
-  }
-})
+export default defineEventHandler(
+  async (event): Promise<ApproveResponse | ConfirmRequiredResponse> => {
+    const id = ticketParam(event)
+    const executor = useExecutor()
+    const body = await readValidatedBody(event, ManualSendBodySchema)
+    return handled(event, () => executor.manualSend(id, body))
+  },
+)
