@@ -38,6 +38,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - name: Agent evals (plumbing; live eval runs only with ANTHROPIC_API_KEY)
+        run: pnpm eval
       - name: Database tests (migrations, RLS, seed)
         run: pnpm test:db
         env:
