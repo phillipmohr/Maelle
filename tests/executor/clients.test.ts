@@ -1,0 +1,109 @@
+import { describe, expect, it } from 'vitest'
+import { createClientsFromEnv, fakesAllowed } from '../../server/executor/clients'
+import { createFakeStripe } from '../../server/executor/clients/stripe-fake'
+import { instaradarConfigFromEnv, parseUserTables } from '../../server/executor/clients/instaradar'
+import { ProviderError, formatActionError } from '../../server/executor/errors'
+
+describe('fake Stripe idempotency', () => {
+  it('replays the same response for the same key and params, and rejects different params', async () => {
+    const s = createFakeStripe()
+    s.seedCustomer({
+      customer: 'c',
+      subscription: 'sub',
+      paymentIntent: 'pi',
+      charge: 'ch',
+      amount: 1000,
+    })
+    const a = await s.createRefund(
+      { charge: 'ch', amount: 400, reason: 'requested_by_customer', metadata: {} },
+      { idempotencyKey: 'k1' },
+    )
+    const b = await s.createRefund(
+      { charge: 'ch', amount: 400, reason: 'requested_by_customer', metadata: {} },
+      { idempotencyKey: 'k1' },
+    )
+    expect(b.id).toBe(a.id)
+    expect(s.state.charges.get('ch')?.amountRefunded).toBe(400)
+    await expect(
+      s.createRefund(
+        { charge: 'ch', amount: 500, reason: 'requested_by_customer', metadata: {} },
+        { idempotencyKey: 'k1' },
+      ),
+    ).rejects.toMatchObject({ code: 'idempotency_error' })
+    const c = await s.createRefund(
+      { charge: 'ch', amount: 600, reason: 'requested_by_customer', metadata: {} },
+      { idempotencyKey: 'k2' },
+    )
+    expect(c.id).not.toBe(a.id)
+    expect(s.state.charges.get('ch')?.refunded).toBe(true)
+    await expect(
+      s.createRefund(
+        { charge: 'ch', amount: 1, reason: 'requested_by_customer', metadata: {} },
+        { idempotencyKey: 'k3' },
+      ),
+    ).rejects.toMatchObject({ code: 'charge_already_refunded' })
+  })
+})
+
+describe('clients from the environment', () => {
+  it('uses fakes outside production and refuses to pretend in production', async () => {
+    const dev = createClientsFromEnv({ NODE_ENV: 'development' })
+    expect(dev.modes).toEqual({
+      stripe: 'fake',
+      instaradar: 'fake',
+      linear: 'fake',
+      authAdmin: 'fake',
+    })
+    const prod = createClientsFromEnv({ NODE_ENV: 'production' })
+    expect(prod.modes).toEqual({
+      stripe: 'unconfigured',
+      instaradar: 'unconfigured',
+      linear: 'unconfigured',
+      authAdmin: 'unconfigured',
+    })
+    let caught: unknown
+    try {
+      await prod.clients.stripe.retrieveSubscription('sub_1')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(ProviderError)
+    expect(formatActionError(caught, 'the subscription was not changed').message).toBe(
+      'Stripe: not_configured: Stripe is not configured (STRIPE_WRITE_KEY) · the subscription was not changed',
+    )
+    expect(fakesAllowed({ NODE_ENV: 'production', EXECUTOR_USE_FAKES: 'true' })).toBe(true)
+    expect(fakesAllowed({ NODE_ENV: 'development', EXECUTOR_USE_FAKES: 'false' })).toBe(false)
+  })
+
+  it('builds real adapters when the credentials are set', () => {
+    const real = createClientsFromEnv({
+      NODE_ENV: 'production',
+      STRIPE_WRITE_KEY: 'rk_test_placeholder',
+      LINEAR_WRITE_API_KEY: 'lin_api_placeholder',
+      INSTARADAR_DB_WRITE_URL: 'postgresql://executor@127.0.0.1:1/instaradar',
+      INSTARADAR_SUPABASE_URL: 'https://x.supabase.co',
+      INSTARADAR_SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
+    })
+    expect(real.modes).toEqual({
+      stripe: 'real',
+      instaradar: 'real',
+      linear: 'real',
+      authAdmin: 'real',
+    })
+  })
+
+  it('reads the InstaRadar table configuration', () => {
+    expect(parseUserTables('tracked_profiles:user_id, profiles:id,sessions')).toEqual([
+      { table: 'tracked_profiles', column: 'user_id' },
+      { table: 'profiles', column: 'id' },
+      { table: 'sessions', column: 'user_id' },
+    ])
+    const cfg = instaradarConfigFromEnv({
+      INSTARADAR_BLOCKED_PROFILES_TABLE: 'blocklist',
+      INSTARADAR_HANDLE_COLUMN: 'x',
+    })
+    expect(cfg.blockedProfilesTable).toBe('blocklist')
+    expect(cfg.blockedHandleColumn).toBe('username')
+    expect(cfg.userTables).toHaveLength(2)
+  })
+})
