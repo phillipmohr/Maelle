@@ -582,10 +582,9 @@ the raw body; deliveries older than five minutes are rejected; retries are idemp
 
 `vercel.json` schedules both routes every minute. Set `CRON_SECRET` in the Vercel project (Vercel
 sends it as `Authorization: Bearer ...`). Per-minute crons need the Pro plan (Hobby allows daily
-crons only) and the cron function needs a max duration of 300 s (Vercel Fluid compute default; if
-the project is configured differently, set `nitro.vercel.functions.maxDuration = 300` in
-`nuxt.config.ts` or the function max duration in the Vercel dashboard, and keep
-`JOBS_TICK_BUDGET_MS` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
+crons only) and the cron function needs a max duration of 300 s: `nuxt.config.ts` sets
+`nitro.vercel.functions.maxDuration = 300` (raise it on Pro if a tick regularly runs out of budget,
+and keep `JOBS_TICK_BUDGET_MS` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
 call the same URLs; the SQL is in the ADR.
 
 ### Trying it locally

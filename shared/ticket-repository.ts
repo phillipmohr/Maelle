@@ -317,7 +317,7 @@ export async function ticketDetailFromDb(
   const id = ticket.id as string
   const [messages, proposals, action_executions, decisions, agent_runs] = await Promise.all([
     exec(
-      `select id, ticket_id, direction, from_email, from_name, to_emails, subject, text_body, html_body,
+      `select id, ticket_id, direction, from_email, from_name, to_emails, subject, text_body, text_stripped, html_body,
         translation, attachments, received_at, sent_at, sent_by, created_at
        from public.messages where ticket_id = $1 order by created_at`,
       [id],

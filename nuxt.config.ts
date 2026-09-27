@@ -99,5 +99,12 @@ export default defineNuxtConfig({
     experimental: {
       tasks: false,
     },
+    // Cron lanes and agent runs need the long function budget (docs/adr/001-jobs.md). Fluid compute
+    // allows 300 s on Hobby and Pro; raise to 800 on Pro if a tick regularly runs out of budget.
+    vercel: {
+      functions: {
+        maxDuration: 300,
+      },
+    },
   },
 })

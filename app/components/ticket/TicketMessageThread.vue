@@ -23,6 +23,7 @@ const earlier = computed(() => sorted.value.filter((_, i) => i !== latestIndex.v
 const expanded = ref(false)
 const showEarlier = ref(false)
 const showTranslation = ref<Record<string, boolean>>({})
+const showQuoted = ref<Record<string, boolean>>({})
 watch(latest, () => {
   expanded.value = false
   showEarlier.value = false
@@ -39,8 +40,16 @@ const meta = computed(() => {
   return `${age} · ${ord} message in thread`
 })
 
+function hasQuotedHistory(m: MessageRow): boolean {
+  return Boolean(m.textStripped && m.textBody && m.textStripped.trim() !== m.textBody.trim())
+}
 function text(m: MessageRow): string {
-  return (showTranslation.value[m.id] && m.translation) || m.textBody || ''
+  if (showTranslation.value[m.id] && m.translation) return m.translation
+  if (m.textStripped && !showQuoted.value[m.id]) return m.textStripped
+  return m.textBody || ''
+}
+function toggleQuoted(m: MessageRow) {
+  showQuoted.value = { ...showQuoted.value, [m.id]: !showQuoted.value[m.id] }
 }
 function paragraphs(m: MessageRow): string[] {
   return text(m)
@@ -73,6 +82,14 @@ function toggleTranslation(m: MessageRow) {
           @click="toggleTranslation(latest)"
         >
           {{ showTranslation[latest.id] ? 'Show original' : 'Show English' }}
+        </button>
+        <button
+          v-if="hasQuotedHistory(latest) && !showTranslation[latest.id]"
+          type="button"
+          class="text-caption font-semibold text-fg-muted hover:text-fg"
+          @click="toggleQuoted(latest)"
+        >
+          {{ showQuoted[latest.id] ? 'Hide quoted history' : 'Show quoted history' }}
         </button>
         <Mono class="text-[11px]">{{ meta }}</Mono>
       </span>
@@ -137,6 +154,14 @@ function toggleTranslation(m: MessageRow) {
                 @click="toggleTranslation(m)"
               >
                 {{ showTranslation[m.id] ? 'Show original' : 'Show English' }}
+              </button>
+              <button
+                v-if="hasQuotedHistory(m) && !showTranslation[m.id]"
+                type="button"
+                class="text-caption font-semibold text-fg-muted hover:text-fg"
+                @click="toggleQuoted(m)"
+              >
+                {{ showQuoted[m.id] ? 'Hide quoted history' : 'Show quoted history' }}
               </button>
               <Mono class="text-[11px]"
                 >{{ ageShort(m.sentAt ?? m.receivedAt ?? m.createdAt, now) }} ago</Mono

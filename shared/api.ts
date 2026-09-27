@@ -89,6 +89,8 @@ export interface MessageRow {
   toEmails: string[]
   subject: string | null
   textBody: string | null
+  /** text_body with the quoted history removed (IRDR-455); null when the mail had no quote or the row predates the column. Prefer it for display. */
+  textStripped?: string | null
   htmlBody: string | null
   translation: string | null
   attachments: { name: string; storagePath: string; contentType?: string; sizeBytes?: number }[]
