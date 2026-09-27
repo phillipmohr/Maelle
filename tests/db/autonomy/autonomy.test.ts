@@ -45,6 +45,26 @@ describe.skipIf(!url)('IRDR-459 autonomy schema and queries', () => {
     appId = await currentAppId()
   })
   afterAll(async () => {
+    // Restore the seed state this file mutates (modes, locks, settings), so other suites that run
+    // against or clone the shared test database (executor, tickets) see the seed, not our edits.
+    if (db && appId) {
+      await db.query(
+        `delete from public.autonomy_modes where app_id = $1 and case_type = 'cancellation_only'`,
+        [appId],
+      )
+      await db.query(
+        `update public.action_locks set locked = true where app_id = $1 and action_type = 'refund_latest_payment'`,
+        [appId],
+      )
+      await db.query(
+        `delete from public.action_locks where app_id = $1 and action_type = 'cancel_at_period_end'`,
+        [appId],
+      )
+      await db.query(
+        `update public.settings set follow_up_days = 3, notify_email = null, global_pause = false where app_id = $1`,
+        [appId],
+      )
+    }
     await db?.end()
     await closeDbForTests()
   })

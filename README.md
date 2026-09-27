@@ -360,8 +360,9 @@ The AnastasAI screens from the design (1b to 1f, 3a and 3b), built from the shar
   against the seeded local Postgres with
   `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr458 pnpm test:db`.
 
-pnpm test                       # tests/executor: every action against the fakes, planner, errors, clients
+pnpm test # tests/executor: every action against the fakes, planner, errors, clients
 TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr457 pnpm test:db
+
 ```
 
 `tests/db/executor/` clones the seeded test database into its own database per file (so the
@@ -369,3 +370,4 @@ foundation's schema assertions never race with these mutations) and runs the flo
 tickets: #4824 routine approve, #4809 confirm + irreversible, #4822 stage 1, #4820 retry of a failed
 required action, plus edits, partial failures, reject, manual send, snooze, mark done, case override,
 Auto refusals, Auto run, undo, due scheduled sends and the refund limits.
+```
