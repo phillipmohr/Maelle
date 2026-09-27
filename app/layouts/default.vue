@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /** App shell: rail on the left, the page fills the rest. Desktop only (frames are 1512 × 944). */
-import type { AutonomyResponse, TicketListResponse } from '#shared/api'
+import type { AutonomyResponse } from '#shared/api'
 import { useShell } from '~/composables/useShell'
+import { useTicketList } from '~/composables/useTickets'
 
 const { inboxCount, automationNote } = useShell()
 
-const { data: list } = useFetch<TicketListResponse>('/api/tickets', { key: 'tickets:list' })
+// Awaited so the rail's count and note are in the server-rendered markup (no hydration mismatch).
+const { data: list } = await useTicketList()
 watch(
   list,
   (l) => {
@@ -14,7 +16,7 @@ watch(
   { immediate: true },
 )
 
-const { data: autonomy } = useFetch<AutonomyResponse>('/api/autonomy', { key: 'autonomy' })
+const { data: autonomy } = await useFetch<AutonomyResponse>('/api/autonomy', { key: 'autonomy' })
 watch(
   autonomy,
   (a) => {

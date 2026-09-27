@@ -92,6 +92,14 @@ Consumers only ever call `services.jobs.enqueue(...)`, `services.mail.sendReply(
 `services.notify(...)`. Job handlers for `agent_run`, `run_due_scheduled` and `daily_digest` are
 registered with `services.jobs.registerHandler(...)` by the agent, executor and autonomy tickets.
 
+### Database access from server code
+
+Server code reads and writes Maelle's database through `server/utils/db.ts` (`dbQuery`, `dbOne`,
+`withTransaction`, a `pg` pool on `SUPABASE_DB_URL`). The same SQL runs in `pnpm test:db` against the
+local Postgres, so every ticket can test its queries without a Supabase project. `useServiceDb()`
+(supabase-js with the service role) is for Storage and Auth admin calls. Routes fall back to the seed
+data when no database is configured (`isDbConfigured()`), so the UI keeps working offline.
+
 ### Binding contracts (do not rename)
 
 - Table names in `supabase/migrations/20260927000000_foundation.sql`. Status-like columns are text

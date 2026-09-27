@@ -8,7 +8,7 @@ import { client, migrate } from './lib/db'
 import { seed } from './db-seed'
 import { LOCAL_PG_URL, start } from './local-pg'
 
-const DB_NAME = 'maelle_test'
+const DB_NAME = process.env.TEST_DB_NAME || 'maelle_test'
 
 let baseUrl = process.env.TEST_DATABASE_URL
 if (!baseUrl) baseUrl = start()

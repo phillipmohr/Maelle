@@ -1,0 +1,76 @@
+{
+  "source": "Notion Examples DB, collection://3e8c931f-6ae5-801d-a2f5-000b1ba7f580, snapshot 2026-09-27",
+  "note": "The Response column is empty for all 10 rows in Notion as of the snapshot. Categories are the Examples DB select options, not CaseType keys; expectedCase maps them for the eval.",
+  "examples": [
+    {
+      "name": "Cancellation, ask for the reason",
+      "category": "Cancellation",
+      "expectedCase": "cancellation_only",
+      "customerMessage": "Please unsubscribe me.",
+      "url": "https://app.notion.com/p/3e8c931f6ae5810f9764cec85a6b0c4c"
+    },
+    {
+      "name": "Cancellation, vague reason, ask before acting",
+      "category": "Cancellation",
+      "expectedCase": "data_accuracy",
+      "customerMessage": "[Cancellation feedback] Reason: inaccurate. Message: the followers/following are not chronological.",
+      "url": "https://app.notion.com/p/3e8c931f6ae58124999cc3599793a615"
+    },
+    {
+      "name": "Refund request, within 30 days, unused",
+      "category": "Refund request",
+      "expectedCase": "refund_request",
+      "customerMessage": "I'd like to cancel and get a refund. I intended to cancel after the free trial but forgot before the billing date, and I haven't used the Pro features since being billed.",
+      "url": "https://app.notion.com/p/3e8c931f6ae581ee9aeceeb0d4b4210b"
+    },
+    {
+      "name": "Billing, bank chargeback with Stripe timeline",
+      "category": "Billing dispute",
+      "expectedCase": "chargeback",
+      "customerMessage": "[From the member's credit union] Our member disputes three charges and states she cancelled three weeks ago but is still being charged. Please refund to avoid the chargeback process.",
+      "url": "https://app.notion.com/p/3e8c931f6ae581298786e73cd61d78eb"
+    },
+    {
+      "name": "Billing, catch-up charges after failed payments",
+      "category": "Billing dispute",
+      "expectedCase": "billing_question",
+      "customerMessage": "You charged my card 3 times in one week! What is going on?",
+      "url": "https://app.notion.com/p/3e8c931f6ae5818fbf8ec9a3520cb1e5"
+    },
+    {
+      "name": "Question, private profile not accessible",
+      "category": "Question",
+      "expectedCase": "product_question",
+      "customerMessage": "The profile I want to track is private, but I follow them on Instagram. On a paid plan, will I be able to see their followers?",
+      "url": "https://app.notion.com/p/3e8c931f6ae581379392c8bddee9d371"
+    },
+    {
+      "name": "Question, fluctuating follower count",
+      "category": "Question",
+      "expectedCase": "data_accuracy",
+      "customerMessage": "The follower count keeps going up but nothing new shows up. I don't trust that it's accurate.",
+      "url": "https://app.notion.com/p/3e8c931f6ae5819e9c79f1d2c8689fc8"
+    },
+    {
+      "name": "Feature request, log and notify at release",
+      "category": "Feedback / feature request",
+      "expectedCase": "feature_request",
+      "customerMessage": "Can you change the automatic names when downloading pictures and videos? They are all named media.mp4 or thumbnail.jpg, hard to list. Adding date and time would be great.",
+      "url": "https://app.notion.com/p/3e8c931f6ae5810f9eacc3fdda3f6f65"
+    },
+    {
+      "name": "Bug report, false post-deletion alerts",
+      "category": "Bug report",
+      "expectedCase": "bug_report",
+      "customerMessage": "I keep getting notifications that posts are being deleted every day from someone I'm tracking, but nothing is actually deleted when I check.",
+      "url": "https://app.notion.com/p/3e8c931f6ae5815caec8e2e2e995f64b"
+    },
+    {
+      "name": "Safety / removal, act immediately",
+      "category": "Safety / removal",
+      "expectedCase": "safety_removal",
+      "customerMessage": "I request the immediate removal of my profile from your website and that my stories are blocked from anonymous viewing. I have safety concerns and have received threats.",
+      "url": "https://app.notion.com/p/3e8c931f6ae581688b87f96e206f6700"
+    }
+  ]
+}
