@@ -163,7 +163,7 @@ export async function runAgent(
     const researchWarnings = [...research.warnings]
     if (knowledge.source === 'snapshot' && knowledge.warnings.length)
       researchWarnings.push(
-        knowledge.warnings.find((w) => /Notion unavailable|NOTION_READ_TOKEN/.test(w)) ??
+        knowledge.warnings.find((w) => /Notion unavailable|NOTION_TOKEN/.test(w)) ??
           knowledge.warnings[0]!,
       )
 

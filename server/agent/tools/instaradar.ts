@@ -1,6 +1,6 @@
 /**
  * InstaRadar's Supabase (Postgres), read only. The real adapter connects with
- * INSTARADAR_DB_READ_URL, a role that has SELECT only. On top of that every connection sets
+ * INSTARADAR_DB_URL (or INSTARADAR_DB_READ_URL, a role that has SELECT only). On top of that every connection sets
  * `default_transaction_read_only = on` and a statement timeout, and the ad-hoc tool only accepts a
  * single SELECT statement with a forced LIMIT (see `guardSelect`).
  *

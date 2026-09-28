@@ -107,6 +107,24 @@ describe('agent credentials (runtime)', () => {
     for (const v of AGENT_ENV_VARS) expect(v).not.toMatch(/WRITE/)
   })
 
+  it('accepts one key per service, with the read-only variant winning when both are set', () => {
+    const single = agentRuntimeConfig({
+      STRIPE_SECRET_KEY: 'sk_single',
+      INSTARADAR_DB_URL: 'postgresql://single@db/instaradar',
+      NOTION_TOKEN: 'ntn_single',
+      LINEAR_API_KEY: 'lin_single',
+    } as NodeJS.ProcessEnv)
+    expect(single.stripeReadKey).toBe('sk_single')
+    expect(single.instaradarDbReadUrl).toBe('postgresql://single@db/instaradar')
+    expect(single.notionReadToken).toBe('ntn_single')
+    expect(single.linearReadApiKey).toBe('lin_single')
+    const both = agentRuntimeConfig({
+      STRIPE_SECRET_KEY: 'sk_single',
+      STRIPE_READ_KEY: 'rk_read',
+    } as NodeJS.ProcessEnv)
+    expect(both.stripeReadKey).toBe('rk_read')
+  })
+
   it('uses the models and the InstaRadar project fixed in shared/config.ts', () => {
     const c = agentRuntimeConfig({} as NodeJS.ProcessEnv)
     expect(c.model).toBe('claude-fable-5-1')

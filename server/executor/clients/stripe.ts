@@ -1,5 +1,5 @@
 /**
- * Stripe write client (STRIPE_WRITE_KEY). A narrow interface with slim types, so the actions read
+ * Stripe write client (STRIPE_SECRET_KEY or STRIPE_WRITE_KEY). A narrow interface with slim types, so the actions read
  * well and the fake stays small. The real adapter wraps the Stripe SDK; every write carries the
  * execution's idempotency key as Stripe's `Idempotency-Key`, so a retry can never refund or cancel
  * twice.

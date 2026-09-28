@@ -69,7 +69,7 @@ describe('clients from the environment', () => {
     }
     expect(caught).toBeInstanceOf(ProviderError)
     expect(formatActionError(caught, 'the subscription was not changed').message).toBe(
-      'Stripe: not_configured: Stripe is not configured (STRIPE_WRITE_KEY) · the subscription was not changed',
+      'Stripe: not_configured: Stripe is not configured (STRIPE_SECRET_KEY) · the subscription was not changed',
     )
     expect(fakesAllowed({ NODE_ENV: 'production', EXECUTOR_USE_FAKES: 'true' })).toBe(true)
     expect(fakesAllowed({ NODE_ENV: 'development', EXECUTOR_USE_FAKES: 'false' })).toBe(false)
@@ -89,6 +89,14 @@ describe('clients from the environment', () => {
       linear: 'real',
       authAdmin: 'real',
     })
+    // One key per service is enough; the *_WRITE_* names are the optional least-privilege variant.
+    const single = createClientsFromEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_test_placeholder',
+      LINEAR_API_KEY: 'lin_api_placeholder',
+      INSTARADAR_DB_URL: 'postgresql://maelle@127.0.0.1:1/instaradar',
+    })
+    expect(single.modes).toMatchObject({ stripe: 'real', instaradar: 'real', linear: 'real' })
   })
 
   it('deletes a user from the InstaRadar tables children first, the profile last', () => {

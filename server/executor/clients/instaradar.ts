@@ -1,5 +1,5 @@
 /**
- * InstaRadar write client (INSTARADAR_DB_WRITE_URL). Two writes exist: block a profile (safety
+ * InstaRadar write client (INSTARADAR_DB_URL or INSTARADAR_DB_WRITE_URL). Two writes exist: block a profile (safety
  * removal) and delete a user's rows (account deletion). Table and column names are the InstaRadar
  * database's, fixed in `shared/config.ts` (`INSTARADAR.db`); the blocklist table itself is added by
  * the InstaRadar-side change in docs/instaradar/ (see the README, IRDR-457 section, for the role).

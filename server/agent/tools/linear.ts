@@ -1,6 +1,6 @@
 /**
  * Linear, read only: search team InstaRadar for an existing issue so a duplicate gets linked
- * instead of created. Constructed with LINEAR_READ_API_KEY only.
+ * instead of created. Constructed with LINEAR_API_KEY (or LINEAR_READ_API_KEY); it only ever reads.
  */
 import { LinearClient, type Issue } from '@linear/sdk'
 import type { LinearIssueSummary, LinearReadClient } from '../types'

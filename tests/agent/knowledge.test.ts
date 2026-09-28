@@ -178,7 +178,7 @@ describe('knowledge loader', () => {
     const loader = createKnowledgeLoader({ notion: null })
     const k = await loader.load()
     expect(k.source).toBe('snapshot')
-    expect(k.warnings.join(' ')).toMatch(/NOTION_READ_TOKEN/)
+    expect(k.warnings.join(' ')).toMatch(/NOTION_TOKEN/)
   })
 
   it('falls back to the snapshot when Notion fails, and caches for the TTL', async () => {

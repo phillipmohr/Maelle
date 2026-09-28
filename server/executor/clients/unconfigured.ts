@@ -28,10 +28,9 @@ function unconfigured<T extends object>(provider: Provider, envName: string): T 
 }
 
 export const unconfiguredStripe = () =>
-  unconfigured<StripeWriteClient>('Stripe', 'STRIPE_WRITE_KEY')
+  unconfigured<StripeWriteClient>('Stripe', 'STRIPE_SECRET_KEY')
 export const unconfiguredInstaradar = () =>
-  unconfigured<InstaradarWriteClient>('InstaRadar', 'INSTARADAR_DB_WRITE_URL')
-export const unconfiguredLinear = () =>
-  unconfigured<LinearWriteClient>('Linear', 'LINEAR_WRITE_API_KEY')
+  unconfigured<InstaradarWriteClient>('InstaRadar', 'INSTARADAR_DB_URL')
+export const unconfiguredLinear = () => unconfigured<LinearWriteClient>('Linear', 'LINEAR_API_KEY')
 export const unconfiguredAuthAdmin = () =>
   unconfigured<AuthAdminClient>('Supabase', 'INSTARADAR_SUPABASE_SERVICE_ROLE_KEY')
