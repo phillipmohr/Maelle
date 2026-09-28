@@ -1,9 +1,10 @@
 import tailwindcss from '@tailwindcss/vite'
+import { SUPABASE } from './shared/config'
 
-// Placeholders let `nuxt build`, `nuxt typecheck` and vitest run without a
-// Supabase project. Real values come from .env (see .env.example).
-const SUPABASE_URL = process.env.SUPABASE_URL || 'http://127.0.0.1:54321'
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'anon-key-placeholder'
+// The project URL and publishable key are public and fixed in shared/config.ts (an env value still
+// overrides them, e.g. for a second project). The service role key is a secret from the environment.
+const SUPABASE_URL = process.env.SUPABASE_URL || SUPABASE.url
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || SUPABASE.anonKey
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 // Development only: explore the UI against seed data without a Supabase project. Never in production.
 const AUTH_DISABLED = process.env.AUTH_DISABLED === 'true' && process.env.NODE_ENV !== 'production'
@@ -82,6 +83,8 @@ export default defineNuxtConfig({
     public: {
       siteUrl: SITE_URL,
       appName: 'Maelle',
+      // True only in `nuxt dev` with AUTH_DISABLED=true: no session, so Realtime stays off too.
+      authDisabled: AUTH_DISABLED,
     },
   },
 

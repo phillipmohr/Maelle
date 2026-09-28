@@ -1,6 +1,7 @@
 /**
- * Server-side Postgres access for Maelle's own database (SUPABASE_DB_URL: the Supabase pooler URL in
- * production, a local Postgres in tests via TEST_DATABASE_URL). Server code writes through this
+ * Server-side Postgres access for Maelle's own database (SUPABASE_DB_URL, or POSTGRES_URL as set by
+ * Vercel's Supabase integration: the pooler URL in production; a local Postgres in tests via
+ * TEST_DATABASE_URL). Server code writes through this
  * helper so the same SQL runs in `pnpm test:db` against a plain Postgres; `useServiceDb()`
  * (supabase-js, service role) stays for Storage and Auth admin calls.
  *
@@ -12,7 +13,12 @@ import pg from 'pg'
 let pool: pg.Pool | null = null
 
 export function dbUrl(): string | undefined {
-  return process.env.SUPABASE_DB_URL || process.env.TEST_DATABASE_URL || undefined
+  return (
+    process.env.SUPABASE_DB_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.TEST_DATABASE_URL ||
+    undefined
+  )
 }
 
 export function isDbConfigured(): boolean {

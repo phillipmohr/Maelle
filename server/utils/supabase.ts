@@ -4,6 +4,7 @@
  * `#supabase/server` instead, which respects RLS.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE } from '#shared/config'
 import type { Database } from '#shared/types/database'
 
 export type MaelleDb = SupabaseClient<Database>
@@ -12,12 +13,12 @@ let cached: MaelleDb | null = null
 
 export function useServiceDb(): MaelleDb {
   if (cached) return cached
-  const url = process.env.SUPABASE_URL
+  const url = process.env.SUPABASE_URL || SUPABASE.url
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
+  if (!key) {
     throw createError({
       statusCode: 503,
-      statusMessage: 'Supabase is not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).',
+      statusMessage: 'Supabase is not configured (SUPABASE_SERVICE_ROLE_KEY).',
     })
   }
   cached = createClient<Database>(url, key, {
@@ -27,5 +28,5 @@ export function useServiceDb(): MaelleDb {
 }
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY)
 }

@@ -7,9 +7,12 @@ export const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations')
 export const SHIM_SQL = path.join(ROOT, 'supabase', 'tests', 'supabase-shim.sql')
 
 export function requireDbUrl(): string {
-  const url = process.env.SUPABASE_DB_URL || process.env.TEST_DATABASE_URL
+  const url =
+    process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || process.env.TEST_DATABASE_URL
   if (!url) {
-    console.error('Set SUPABASE_DB_URL (a Postgres URL) in .env or the environment.')
+    console.error(
+      'Set SUPABASE_DB_URL (or POSTGRES_URL, a Postgres URL) in .env or the environment.',
+    )
     process.exit(1)
   }
   return url
