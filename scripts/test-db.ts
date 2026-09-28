@@ -30,10 +30,16 @@ await db.end()
 await seed(testUrl, { allowedUserEmail: 'test@maelle.local', log: () => {} })
 
 console.log(`database ready at ${testUrl}`)
-const r = spawnSync('pnpm', ['exec', 'vitest', 'run', 'tests/db', ...process.argv.slice(2)], {
-  stdio: 'inherit',
-  env: { ...process.env, TEST_DATABASE_URL: testUrl },
-})
+// One test file at a time: the files share this database, and two of them upserting the same
+// mail_cursors row inside their rolled-back transactions deadlocked on CI when run in parallel.
+const r = spawnSync(
+  'pnpm',
+  ['exec', 'vitest', 'run', 'tests/db', '--no-file-parallelism', ...process.argv.slice(2)],
+  {
+    stdio: 'inherit',
+    env: { ...process.env, TEST_DATABASE_URL: testUrl },
+  },
+)
 if (baseUrl === LOCAL_PG_URL) {
   // leave the cluster running for repeated runs; `pnpm db:local stop` stops it
 }
