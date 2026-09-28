@@ -40,7 +40,7 @@ not per environment. Development-only switches never go to Vercel: `AUTH_DISABLE
 With a Supabase project:
 
 ```bash
-# .env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL
+# .env: SUPABASE_DB_URL, SUPABASE_SERVICE_ROLE_KEY (the project URL and publishable key are in shared/config.ts)
 pnpm db:migrate                 # applies supabase/migrations, allow-lists OWNER.email (shared/config.ts)
 pnpm db:seed                    # the design's sample data (idempotent)
 pnpm db:types                   # regenerates shared/types/database.ts
@@ -158,9 +158,19 @@ secrets live there, everything else is fixed in `shared/config.ts`.
 
 ## Deployment
 
-Vercel picks up the Nuxt build automatically (`pnpm build`). Set the variables from `.env.example`
-in the Vercel project (preview and production). Cron schedules are added by the mail/jobs ticket
-(`vercel.json` or Supabase cron, see `docs/adr/001-jobs.md`).
+Vercel picks up the Nuxt build automatically (`pnpm build`). A first deploy needs five values in the
+Vercel project:
+
+1. `SUPABASE_DB_URL` and `SUPABASE_SERVICE_ROLE_KEY`: connect the Vercel project to the Supabase
+   project (Vercel → Integrations → Supabase) and they arrive by themselves as `POSTGRES_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY`, which Maelle reads too. The project URL and publishable key are
+   fixed in `shared/config.ts`.
+2. `MAIL_PASSWORD`, `ANTHROPIC_API_KEY`, `CRON_SECRET`.
+
+Every other variable in `.env.example` switches on one integration (Stripe, the InstaRadar roles,
+Vercel logs, Notion, Linear) and can be added later; until then that source is reported as
+unavailable and that action says "not configured". Cron schedules are in `vercel.json`
+(see `docs/adr/001-jobs.md`).
 
 ## IRDR-459: Autonomy, activity log, playbook, notifications, learning loop
 

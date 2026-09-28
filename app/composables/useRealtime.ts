@@ -1,8 +1,8 @@
 /**
  * Supabase Realtime on tickets, agent_runs and action_executions: researching tickets turn ready
  * without a reload, the rail count updates, per-action results appear during execution.
- * A no-op when Supabase is not configured (the module falls back to a 127.0.0.1 placeholder URL),
- * so offline development has no console noise. Every step is guarded with try/catch.
+ * A no-op in offline development (AUTH_DISABLED, or a placeholder Supabase URL), so there is no
+ * console noise. Every step is guarded with try/catch.
  */
 import { CLOSED_LIST_KEY, TICKET_LIST_KEY } from '~/composables/useTickets'
 
@@ -39,7 +39,8 @@ function notify(table: RealtimeTable, payload: unknown) {
 export function useRealtime() {
   const config = useRuntimeConfig()
   const supabaseUrl = (config.public as { supabase?: { url?: string } }).supabase?.url
-  const enabled = import.meta.client && isRealtimeUrl(supabaseUrl)
+  // Without a session (AUTH_DISABLED in dev) RLS would deliver nothing anyway; skip the websocket.
+  const enabled = import.meta.client && !config.public.authDisabled && isRealtimeUrl(supabaseUrl)
 
   function start() {
     if (!enabled || started) return

@@ -7,6 +7,16 @@
  * team, which InstaRadar project and tables, which models, the tuning knobs.
  */
 
+/**
+ * Maelle's own Supabase project. The URL and the publishable (anon) key are public by design (they
+ * ship in the browser bundle); the service role key and the Postgres URL are secrets and stay in the
+ * environment (`SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` or Vercel's `POSTGRES_URL`).
+ */
+export const SUPABASE = {
+  url: 'https://gfvfugezaddciyvyamwx.supabase.co',
+  anonKey: 'sb_publishable_YY6DIVvNX2GnzL7-gQiX2w_rfNrgr7e',
+} as const
+
 /** The single Maelle user. */
 export const OWNER = {
   /** The only account allowed to sign in (Supabase Auth: magic link or Google). */
