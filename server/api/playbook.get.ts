@@ -9,7 +9,7 @@ import { loadPlaybookCounts } from '../learning/notion-counts'
 
 export default defineEventHandler(async (): Promise<PlaybookResponse> => {
   const support = notionPageUrl(NOTION.customerSupportPageId)
-  const counts = await loadPlaybookCounts(process.env.NOTION_READ_TOKEN)
+  const counts = await loadPlaybookCounts(process.env.NOTION_READ_TOKEN || process.env.NOTION_TOKEN)
   return {
     protocol: [
       { title: 'Persona & Tone', url: support },

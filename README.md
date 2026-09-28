@@ -142,19 +142,25 @@ surface on a screen (`<Panel elevation="focus">`).
 Every integration uses the narrowest key that can do its job. Names are in `.env.example`; only
 secrets live there, everything else is fixed in `shared/config.ts`.
 
-| Variable                  | Used by         | Permissions                                                                                           |
-| ------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
-| `STRIPE_READ_KEY`         | agent           | restricted key, read on everything, no writes                                                         |
-| `STRIPE_WRITE_KEY`        | executor        | restricted key, write on Subscriptions, Refunds, Coupons, Promotion codes, Invoices; read on the rest |
-| `INSTARADAR_DB_READ_URL`  | agent           | Postgres role with SELECT only and a statement timeout                                                |
-| `INSTARADAR_DB_WRITE_URL` | executor        | Postgres role limited to the executor's writes (blocklist, deletion)                                  |
-| `NOTION_READ_TOKEN`       | agent, playbook | integration with read content only                                                                    |
-| `NOTION_WRITE_TOKEN`      | learning loop   | integration with read + insert content, no update or delete                                           |
-| `LINEAR_READ_API_KEY`     | agent           | read                                                                                                  |
-| `LINEAR_WRITE_API_KEY`    | executor        | create issues, create comments                                                                        |
-| `VERCEL_API_TOKEN`        | agent           | read runtime logs of the InstaRadar project                                                           |
-| `CRON_SECRET`             | cron routes     | bearer token the scheduler presents                                                                   |
-| `ANTHROPIC_API_KEY`       | agent           | Claude API                                                                                            |
+One key per service is enough:
+
+| Variable                               | Used by                   | What it needs                                                                    |
+| -------------------------------------- | ------------------------- | -------------------------------------------------------------------------------- |
+| `STRIPE_SECRET_KEY`                    | agent (reads), executor   | the account's secret key, or a restricted key with the writes listed in IRDR-457 |
+| `INSTARADAR_DB_URL`                    | agent (reads), executor   | a Postgres URL of the InstaRadar project (`docs/instaradar/executor-role.sql`)   |
+| `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | executor                  | delete the InstaRadar auth user                                                  |
+| `NOTION_TOKEN`                         | agent, playbook, learning | an internal integration with read and insert content                             |
+| `LINEAR_API_KEY`                       | agent (reads), executor   | read, create issues, create comments                                             |
+| `LINEAR_WEBHOOK_SECRET`                | webhook route             | the webhook's signing secret                                                     |
+| `VERCEL_API_TOKEN`                     | agent                     | read runtime logs of the InstaRadar project                                      |
+| `CRON_SECRET`                          | cron routes               | bearer token the scheduler presents                                              |
+
+If you want least privilege, the split names still work and win when set: `STRIPE_READ_KEY` /
+`STRIPE_WRITE_KEY` (read-only for the agent; write on Subscriptions, Refunds, Coupons, Promotion
+codes, Invoices for the executor), `INSTARADAR_DB_READ_URL` / `INSTARADAR_DB_WRITE_URL` (a SELECT-only
+role for the agent, the executor role for writes), `NOTION_READ_TOKEN` / `NOTION_WRITE_TOKEN` (read
+content only; read + insert, no update or delete), `LINEAR_READ_API_KEY` / `LINEAR_WRITE_API_KEY`.
+| `ANTHROPIC_API_KEY` | agent | Claude API |
 
 ## Deployment
 
@@ -217,7 +223,7 @@ plus `settings` (the `settings_audit` rows of the same time range, shown as "Set
 ### Playbook (`/anastasai/playbook`)
 
 Read-only links into Notion: protocol sections, the 17 templates with actions and "Confirm first",
-Examples and Knowledge Base counts (live through `NOTION_READ_TOKEN`, cached five minutes; snapshot
+Examples and Knowledge Base counts (live through `NOTION_TOKEN`, cached five minutes; snapshot
 counts otherwise, `liveCounts` says which).
 
 ### Notifications
@@ -232,7 +238,7 @@ everything since the last sent digest: handled automatically, needs a decision, 
 ### Learning loop
 
 - Notion writes go through `NotionWriter` (`server/learning/notion-writer.ts`): the real adapter uses
-  `NOTION_WRITE_TOKEN` (insert only), the in-memory fake serves tests and every environment without
+  `NOTION_TOKEN` (or `NOTION_WRITE_TOKEN`, insert only), the in-memory fake serves tests and every environment without
   the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, model `MODELS.small`, i.e.
   `claude-sonnet-5`) with a deterministic fallback (first sentences of the reply).
 - `POST /api/learning/example { ticketId }`: Draft page in the Examples DB (Name, Category, Customer
@@ -296,13 +302,13 @@ Each system sits behind an interface with a real adapter and an in-memory fake
 one, `nuxt dev` and tests use the fakes; production gets a client whose calls fail with
 `<Provider>: not_configured` so nothing is ever pretended. `EXECUTOR_USE_FAKES` overrides this.
 
-| Variable                               | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STRIPE_WRITE_KEY`                     | cancel, refund, stop retries, coupons, cancellation details | Restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
-| `INSTARADAR_DB_WRITE_URL`              | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on `tracked_profiles` and on each table in `INSTARADAR.db.userTables` (`shared/config.ts`); `statement_timeout 20s`; no other grants.                                                                                                                                                          |
-| `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`); the project URL is fixed in `shared/config.ts`. Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                       |
-| `LINEAR_WRITE_API_KEY`                 | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the labels `Bug`/`Feature` and the marker). Team InstaRadar is fixed in `shared/config.ts`.                                                                                                                                                                                                                                                                       |
-| `SUPABASE_DB_URL`                      | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                     |
+| Variable                                           | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `STRIPE_SECRET_KEY` (or `STRIPE_WRITE_KEY`)        | cancel, refund, stop retries, coupons, cancellation details | The secret key, or a restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
+| `INSTARADAR_DB_URL` (or `INSTARADAR_DB_WRITE_URL`) | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on `tracked_profiles` and on each table in `INSTARADAR.db.userTables` (`shared/config.ts`); `statement_timeout 20s`; no other grants.                                                                                                                                                                               |
+| `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY`             | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`); the project URL is fixed in `shared/config.ts`. Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                                            |
+| `LINEAR_API_KEY` (or `LINEAR_WRITE_API_KEY`)       | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the labels `Bug`/`Feature` and the marker). Team InstaRadar is fixed in `shared/config.ts`.                                                                                                                                                                                                                                                                                            |
+| `SUPABASE_DB_URL`                                  | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                                          |
 
 Mail goes through `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })` (IRDR-455).
 
@@ -452,7 +458,7 @@ thread; drafted from the protocol until a "Release notification" template exists
 
 ### Knowledge
 
-`knowledge/loader.ts` reads Notion at runtime with `NOTION_READ_TOKEN` (`@notionhq/client`, data
+`knowledge/loader.ts` reads Notion at runtime with `NOTION_TOKEN` (`@notionhq/client`, data
 sources `dataSources.query`, page bodies `blocks.children.list`), caches for `AGENT.knowledgeCacheTtlMs`
 (5 minutes) per process and falls back to the `docs/notion` snapshot (JSON imports plus
 `knowledge/protocol-snapshot.ts`, kept identical to `customer-support.md` by a test) when the token
@@ -464,11 +470,11 @@ is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it
 
 | Source              | Adapter                                                                                                                                                                                                                             | Credential                                                        |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_READ_KEY`                                                 |
-| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_READ_URL`                                          |
+| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_SECRET_KEY` (or `STRIPE_READ_KEY`)                        |
+| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_URL` (or `INSTARADAR_DB_READ_URL`)                 |
 | Vercel logs         | `tools/vercel.ts`, see below                                                                                                                                                                                                        | `VERCEL_API_TOKEN` (team and project fixed in `shared/config.ts`) |
-| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_READ_API_KEY`                                             |
-| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_READ_TOKEN`                                               |
+| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_API_KEY` (or `LINEAR_READ_API_KEY`)                       |
+| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_TOKEN` (or `NOTION_READ_TOKEN`)                           |
 | Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                              |
 | Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-fable-5-1`), consistency check `MODELS.small` (`claude-sonnet-5`)                                                                             | `ANTHROPIC_API_KEY`                                               |
 

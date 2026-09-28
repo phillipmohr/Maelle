@@ -73,7 +73,7 @@ returned by search, profile pages, exports or notification emails.
 
 ## 4. What Maelle writes
 
-For `remove_from_tracking` the executor runs, in one transaction on `INSTARADAR_DB_WRITE_URL`:
+For `remove_from_tracking` the executor runs, in one transaction on `INSTARADAR_DB_URL`:
 
 ```sql
 insert into public.blocked_profiles (username, reason, source) values ($1, $2, 'Maelle ticket #4831')

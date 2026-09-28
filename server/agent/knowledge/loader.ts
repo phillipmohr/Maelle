@@ -32,7 +32,7 @@ export function createKnowledgeLoader(deps: {
       const k = await snapshot()
       return {
         ...k,
-        warnings: [...k.warnings, 'NOTION_READ_TOKEN is not set, using the docs/notion snapshot'],
+        warnings: [...k.warnings, 'No Notion token (NOTION_TOKEN), using the docs/notion snapshot'],
       }
     }
     try {

@@ -50,7 +50,8 @@ place a profile can appear.
   `profile` (account deletion, children first; the cascades handle the rest)
 - `USAGE` on the schema, a `statement_timeout` of 20 s, no `CREATE`, no other tables
 
-Its connection string becomes `INSTARADAR_DB_WRITE_URL` in Maelle. The agent's `INSTARADAR_DB_READ_URL`
+Its connection string becomes `INSTARADAR_DB_URL` in Maelle (or `INSTARADAR_DB_WRITE_URL` when the
+agent gets its own read-only URL). The agent's `INSTARADAR_DB_READ_URL`
 role stays SELECT-only (it also needs `SELECT` on `auth.users` and `auth.audit_log_entries` for the
 last sign-in and the sign-in history; without those grants the agent simply reports them as
 unavailable) and must not see `blocked_profiles` reasons if that is considered sensitive.

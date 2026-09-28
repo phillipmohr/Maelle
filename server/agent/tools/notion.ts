@@ -1,5 +1,5 @@
 /**
- * Notion, read only. Constructed with NOTION_READ_TOKEN (an integration with "read content" only).
+ * Notion, read only. Constructed with NOTION_TOKEN (or NOTION_READ_TOKEN, an integration with "read content" only).
  * The interface has two reads: the rows of a data source (Templates, Examples, Knowledge Base) and
  * the plain text of a page (template body or KB entry).
  */

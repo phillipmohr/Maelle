@@ -1,5 +1,5 @@
 /**
- * Notion writes go through this interface only. The real adapter uses NOTION_WRITE_TOKEN, an
+ * Notion writes go through this interface only. The real adapter uses NOTION_TOKEN (or NOTION_WRITE_TOKEN), an
  * integration with insert content and no update or delete, so Maelle can create pages but never
  * change or remove existing ones. The fake keeps pages in memory: tests, and every environment
  * without the token.
@@ -130,10 +130,10 @@ export function createFakeNotionWriter(): NotionWriter & { pages: FakeNotionPage
 
 let fromEnv: NotionWriter | null = null
 
-/** The real writer when NOTION_WRITE_TOKEN is set, the fake otherwise (never the read token). */
+/** The real writer when NOTION_TOKEN (or NOTION_WRITE_TOKEN) is set, the fake otherwise. */
 export function notionWriterFromEnv(env: NodeJS.ProcessEnv = process.env): NotionWriter {
   if (fromEnv) return fromEnv
-  const token = env.NOTION_WRITE_TOKEN
+  const token = env.NOTION_WRITE_TOKEN || env.NOTION_TOKEN
   fromEnv = token ? createNotionWriter(token) : createFakeNotionWriter()
   return fromEnv
 }
