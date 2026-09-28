@@ -2,7 +2,7 @@
  * Outbound mail (IRDR-455), exactly once. Every send is keyed in `mail_sends`: the row is claimed
  * as `sending` with a pre-generated Message-ID, then the provider sends, then the row becomes
  * `sent` and the message is stored. A retry that finds `sent` returns it without sending. A row
- * stuck in `sending` (crash between send and record) is taken over after MAIL_STUCK_SEND_MINUTES,
+ * stuck in `sending` (crash between send and record) is taken over after MAILBOX.stuckSendMinutes,
  * but the provider is asked for the Message-ID first, so nothing goes out twice.
  */
 import { createHash, randomUUID } from 'node:crypto'
@@ -10,7 +10,7 @@ import type { ReplyDraft } from '#shared/proposal'
 import type { SentMail } from '#shared/services'
 import type { Db } from '../jobs/db'
 import { errorMessage } from '../jobs/types'
-import { buildMime, newMessageId, replySubject, textToHtml } from './compose'
+import { buildMime, newMessageId, replySubject, textToHtml, withSignature } from './compose'
 import { MailConfigError, mailboxDomain } from './config'
 import type { MailContext } from './context'
 import { normalizeSubject } from './threading'
@@ -178,13 +178,14 @@ export async function sendReply(
   const references = latestIn
     ? [...latestIn.references, latestIn.message_id].filter((x): x is string => Boolean(x))
     : []
+  const text = withSignature(draft.body)
   const mail: OutgoingMail = {
     from: { name: config.fromName, address: config.mailbox },
     to: [draft.to],
     ...(cc.length ? { cc } : {}),
     subject,
-    text: draft.body,
-    html: textToHtml(draft.body),
+    text,
+    html: textToHtml(text),
     messageId: rfcMessageId,
     inReplyTo: latestIn?.message_id ?? null,
     references,
@@ -227,7 +228,7 @@ export async function sendReply(
         config.fromName,
         [draft.to],
         subject,
-        draft.body,
+        text,
         mail.html,
         JSON.stringify(draft.attachments ?? []),
         rawPath,
@@ -258,8 +259,7 @@ export async function sendSystemEmail(
 ): Promise<void> {
   const { db, config, provider } = ctx
   const recipient = (to || config.notifyEmail || '').trim()
-  if (!recipient)
-    throw new MailConfigError('sendSystemEmail: no recipient and NOTIFY_EMAIL is not set')
+  if (!recipient) throw new MailConfigError('sendSystemEmail: no recipient')
   const now = ctx.now()
   const hash = createHash('sha256')
     .update(`${recipient}\n${subject}\n${body}`)

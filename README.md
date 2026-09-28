@@ -27,17 +27,27 @@ Without a Supabase project, set `AUTH_DISABLED=true` in `.env`: the UI then runs
 data served by the stubbed API routes (the design's sample tickets). `AUTH_DISABLED` is ignored in
 production builds and by the server middleware outside `nuxt dev`.
 
+Configuration is split in two: `.env.example` lists the secrets and per-environment values (Supabase,
+the mailbox password, Stripe, the InstaRadar roles, the API tokens, the cron secret), and
+`shared/config.ts` fixes everything else in code: the owner's email, the support mailbox with its
+IMAP and SMTP hosts and the reply signature, the Linear team, the InstaRadar Supabase and Vercel
+projects and table names, the Claude models, the agent, mail and job tuning. Change those in code,
+not per environment. Development-only switches never go to Vercel: `AUTH_DISABLED=true`,
+`MAIL_FAKE_DIR=<folder of .eml files>` for the fake mailbox, `EXECUTOR_USE_FAKES=true|false` and
+`EXECUTOR_SEED_FAKES=false` for the executor's in-memory Stripe, Linear and InstaRadar,
+`NUXT_PUBLIC_SITE_URL` to override the public URL (otherwise Vercel's production URL is used).
+
 With a Supabase project:
 
 ```bash
-# .env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL, ALLOWED_USER_EMAIL
-pnpm db:migrate                 # applies supabase/migrations, allow-lists ALLOWED_USER_EMAIL
+# .env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL
+pnpm db:migrate                 # applies supabase/migrations, allow-lists OWNER.email (shared/config.ts)
 pnpm db:seed                    # the design's sample data (idempotent)
 pnpm db:types                   # regenerates shared/types/database.ts
 pnpm db:reset -- --seed         # truncate + reseed (refuses non-local URLs without --force)
 ```
 
-Auth is Supabase Auth with a single allowed user: only `ALLOWED_USER_EMAIL` can sign in (magic link
+Auth is Supabase Auth with a single allowed user: only `OWNER.email` from `shared/config.ts` can sign in (magic link
 or Google). Everything else is rejected by the server middleware, by RLS, and by a trigger on
 `auth.users` that refuses to create any other account. Enable the Google provider in the Supabase
 dashboard if you want the Google button to work.
@@ -129,7 +139,8 @@ surface on a screen (`<Panel elevation="focus">`).
 
 ## Credentials and permissions
 
-Every integration uses the narrowest key that can do its job. Names are in `.env.example`.
+Every integration uses the narrowest key that can do its job. Names are in `.env.example`; only
+secrets live there, everything else is fixed in `shared/config.ts`.
 
 | Variable                  | Used by         | Permissions                                                                                           |
 | ------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
@@ -202,7 +213,7 @@ counts otherwise, `liveCounts` says which).
 ### Notifications
 
 `services.notify(kind, payload)` sends plain-text mail to `settings.notify_email`, else
-`NOTIFY_EMAIL`, through `services.mail.sendSystemEmail`, and logs every attempt in `notifications`
+`OWNER.notifyEmail` (`shared/config.ts`), through `services.mail.sendSystemEmail`, and logs every attempt in `notifications`
 (`pending`, `sent`, `failed`, `skipped`). `high_risk_ticket` is deduped per ticket, `daily_digest`
 per local day (`digest:YYYY-MM-DD` in the settings timezone), `system_alert` always sends. The
 `daily_digest` job handler is registered in `server/plugins/autonomy.ts`; the digest covers
@@ -212,7 +223,7 @@ everything since the last sent digest: handled automatically, needs a decision, 
 
 - Notion writes go through `NotionWriter` (`server/learning/notion-writer.ts`): the real adapter uses
   `NOTION_WRITE_TOKEN` (insert only), the in-memory fake serves tests and every environment without
-  the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, `AGENT_SMALL_MODEL`, default
+  the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, model `MODELS.small`, i.e.
   `claude-sonnet-5`) with a deterministic fallback (first sentences of the reply).
 - `POST /api/learning/example { ticketId }`: Draft page in the Examples DB (Name, Category, Customer
   message, Response, Status Draft). `POST /api/learning/kb-draft { ticketId }`: Draft page in the
@@ -275,13 +286,13 @@ Each system sits behind an interface with a real adapter and an in-memory fake
 one, `nuxt dev` and tests use the fakes; production gets a client whose calls fail with
 `<Provider>: not_configured` so nothing is ever pretended. `EXECUTOR_USE_FAKES` overrides this.
 
-| Variable                                                          | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `STRIPE_WRITE_KEY`                                                | cancel, refund, stop retries, coupons, cancellation details | Restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
-| `INSTARADAR_DB_WRITE_URL`                                         | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on the tracked-profiles table and on each table in `INSTARADAR_USER_TABLES`; `statement_timeout 20s`; no other grants.                                                                                                                                                                         |
-| `INSTARADAR_SUPABASE_URL`, `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`). Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                                                                       |
-| `LINEAR_WRITE_API_KEY`, `LINEAR_TEAM_ID` or `LINEAR_TEAM_NAME`    | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the team, labels `Bug`/`Feature`, and the marker). Team InstaRadar.                                                                                                                                                                                                                                                                                               |
-| `SUPABASE_DB_URL`                                                 | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                     |
+| Variable                               | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRIPE_WRITE_KEY`                     | cancel, refund, stop retries, coupons, cancellation details | Restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
+| `INSTARADAR_DB_WRITE_URL`              | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on `tracked_profiles` and on each table in `INSTARADAR.db.userTables` (`shared/config.ts`); `statement_timeout 20s`; no other grants.                                                                                                                                                          |
+| `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`); the project URL is fixed in `shared/config.ts`. Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                       |
+| `LINEAR_WRITE_API_KEY`                 | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the labels `Bug`/`Feature` and the marker). Team InstaRadar is fixed in `shared/config.ts`.                                                                                                                                                                                                                                                                       |
+| `SUPABASE_DB_URL`                      | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                     |
 
 Mail goes through `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })` (IRDR-455).
 
@@ -432,7 +443,7 @@ thread; drafted from the protocol until a "Release notification" template exists
 ### Knowledge
 
 `knowledge/loader.ts` reads Notion at runtime with `NOTION_READ_TOKEN` (`@notionhq/client`, data
-sources `dataSources.query`, page bodies `blocks.children.list`), caches for `KNOWLEDGE_CACHE_TTL_MS`
+sources `dataSources.query`, page bodies `blocks.children.list`), caches for `AGENT.knowledgeCacheTtlMs`
 (5 minutes) per process and falls back to the `docs/notion` snapshot (JSON imports plus
 `knowledge/protocol-snapshot.ts`, kept identical to `customer-support.md` by a test) when the token
 is missing or Notion fails. Examples: only `Status = Active` rows once the property exists. Knowledge
@@ -441,34 +452,36 @@ is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it
 
 ### Read-only tools and credentials
 
-| Source              | Adapter                                                                                                                                                                                                                             | Credential                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_READ_KEY`                                                    |
-| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_READ_URL`                                             |
-| Vercel logs         | `tools/vercel.ts`, see below                                                                                                                                                                                                        | `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_INSTARADAR_PROJECT_ID` |
-| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_READ_API_KEY`, `LINEAR_TEAM_ID`                              |
-| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_READ_TOKEN`                                                  |
-| Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                                 |
-| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `AGENT_MODEL` default `claude-fable-5-1`, consistency check `AGENT_SMALL_MODEL` default `claude-sonnet-5`                                                             | `ANTHROPIC_API_KEY`                                                  |
+| Source              | Adapter                                                                                                                                                                                                                             | Credential                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_READ_KEY`                                                 |
+| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_READ_URL`                                          |
+| Vercel logs         | `tools/vercel.ts`, see below                                                                                                                                                                                                        | `VERCEL_API_TOKEN` (team and project fixed in `shared/config.ts`) |
+| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_READ_API_KEY`                                             |
+| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_READ_TOKEN`                                               |
+| Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                              |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-fable-5-1`), consistency check `MODELS.small` (`claude-sonnet-5`)                                                                             | `ANTHROPIC_API_KEY`                                               |
 
 Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
 Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by
 `createFakeTools()`.
 
-**InstaRadar table names** are assumptions (the InstaRadar repository was not reachable):
-`public.profiles`, `public.tracked_profiles`, `public.scans`, `public.alerts`,
-`auth.audit_log_entries`, `public.blocked_profiles` with the columns listed in
-`DEFAULT_INSTARADAR_TABLES` (`server/agent/config.ts`). Override any of them with the
-`INSTARADAR_TABLES` JSON.
+**InstaRadar tables** were read from the InstaRadar Supabase project on 2026-09-28 and are fixed in
+`shared/config.ts` (`INSTARADAR.db`): `profile` (the auth user, email, Stripe customer),
+`subscription` (plan, status), `tracked_profiles` (`instagram_username`, `is_active`),
+`scan_history`, `notification_log`, and `auth.audit_log_entries` for sign-ins. The read role needs
+`SELECT` on those, plus `auth.users` for the last sign-in (missing grants only cost that field).
 
-**Vercel logs.** `VERCEL_LOGS_SOURCE=api` (default) reads the Runtime Logs endpoint
-`GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?teamId=…`
+**Vercel logs.** With `VERCEL_API_TOKEN` the agent reads the Runtime Logs endpoint of the InstaRadar
+project (team slug and project name in `shared/config.ts`; the project id is resolved once from the
+name): `GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?slug=…`
 (NDJSON, one entry per line; the production deployment id comes from
 `GET /v6/deployments?projectId=…&target=production&limit=1`) and filters by time, text, user id and
 profile handle. The endpoint is built for tailing and only returns a recent window. When that is not
 enough, set up a Vercel **log drain** (JSON format) that posts into the `vercel_logs` table added by
-`supabase/migrations/20260927010456_agent.sql` and set `VERCEL_LOGS_SOURCE=drain`; the agent then
-queries the table with plain SQL (`createLogDrainLogsClient`). The ingest route for the drain
+`supabase/migrations/20260927010456_agent.sql` and wire `createLogDrainLogsClient` in
+`server/agent/tools/index.ts` (`vercelLogsFromDrain`); the agent then queries the table with plain
+SQL. The ingest route for the drain
 (`POST /api/webhooks/vercel-logs`, verifying `x-vercel-signature`) belongs to the webhooks folder of
 IRDR-455 and is requested from there.
 
@@ -519,7 +532,7 @@ job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`
 ### How it runs
 
 - `POST|GET /api/cron/tick` every minute (Vercel Cron, `vercel.json`): evaluates the recurring
-  schedule from `job_heartbeats`, runs due jobs from the `jobs` table within `JOBS_TICK_BUDGET_MS`,
+  schedule from `job_heartbeats`, runs due jobs from the `jobs` table within `JOBS.tickBudgetMs`,
   checks health, prunes old history once a day.
 - `POST|GET /api/cron/fetch-mail` every minute: the `fetch_mail` lane, so a long agent run never
   delays inbound mail.
@@ -535,7 +548,8 @@ job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`
   execution id as `idempotencyKey`; a retry returns the stored result without sending. The reply
   carries `In-Reply-To`/`References` of the latest customer mail, the thread's subject with `Re:`,
   plain text plus simple HTML, and attachments from Storage. `services.mail.sendSystemEmail(to,
-subject, body)` goes to `NOTIFY_EMAIL` when `to` is empty.
+subject, body)` goes to `OWNER.notifyEmail` when `to` is empty. Every reply gets Anastasia's
+  signature (`MAILBOX.signature`) appended when it is sent; drafts carry no sign-off.
 - Follow-ups: `shared/follow-up.ts` `followUpKindDue()` decides between `follow_up` (after
   `settings.follow_up_days`) and `auto_close` (after `settings.auto_close_days`), counted from our
   first reply after the customer's last message. The agent can read the latest
@@ -544,25 +558,17 @@ subject, body)` goes to `NOTIFY_EMAIL` when `to` is empty.
   `ticket_follow_ups`; columns `messages.text_stripped`, `messages.provider_thread_id`,
   `messages.headers`.
 
-### Which mail provider
+### The mailbox
 
-The mailbox host decides the adapter. Run `dig MX instaradar.app` (or `nslookup -type=MX
-instaradar.app`):
-
-- MX records pointing to `*.google.com` / `*.googlemail.com`: Google Workspace. Use
-  `MAIL_PROVIDER=gmail` with either an OAuth client of the mailbox (Google Cloud project, Gmail API
-  enabled, OAuth client "Desktop app", one-time consent with scope
-  `https://www.googleapis.com/auth/gmail.modify` to obtain `GMAIL_OAUTH_REFRESH_TOKEN`), or a
-  service account with domain-wide delegation for that scope (`GMAIL_SERVICE_ACCOUNT_JSON`,
-  `GMAIL_IMPERSONATE_USER=support@instaradar.app`). The cursor is the mailbox history id; replies
-  are sent through the API into the same thread and land in Sent automatically.
-- Anything else (Zoho, Fastmail, Namecheap, Hetzner, ...): `MAIL_PROVIDER=imap` with
-  `IMAP_HOST/IMAP_PORT/IMAP_USER/IMAP_PASSWORD` and `SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD`
-  (usually the same login; use an app password when 2FA is on). The cursor is the INBOX UID; sent
-  mail is appended to the Sent folder (`IMAP_SENT_FOLDER` if it cannot be detected).
-- No credentials: the in-memory fake, which is also what the tests use. For a local end-to-end
-  run set `MAIL_FAKE_DIR=.data/mail` and drop `.eml` files there (names sort chronologically, e.g.
-  `2026-09-27T10-00-mail.eml`); sent mail is written to `.data/mail/sent`.
+support@instaradar.app is hosted on Namecheap Private Email: IMAP `mail.privateemail.com:993` in,
+SMTP `mail.privateemail.com:465` out, login is the address. Hosts, ports, the sender name
+("InstaRadar Support") and the signature are fixed in `shared/config.ts` (`MAILBOX`); the one secret
+is `MAIL_PASSWORD`, the mailbox password used for both. The cursor is the INBOX UID; sent mail is
+appended to the Sent folder (found through the `\Sent` special-use flag), so replies show up in
+Apple Mail like any other. Without `MAIL_PASSWORD` the in-memory fake is used, which is also what
+the tests use; for a local end-to-end run set `MAIL_FAKE_DIR=.data/mail` and drop `.eml` files there
+(names sort chronologically, e.g. `2026-09-27T10-00-mail.eml`); sent mail is written to
+`.data/mail/sent`.
 
 Inbound rules: dedupe by `Message-ID` (and provider id); auto-replies (`Auto-Submitted` other than
 `no`, `Precedence: auto_reply`, `X-Autoreply`, out-of-office subjects), bounces (mailer-daemon,
@@ -577,7 +583,7 @@ queued run; other statuses attach and enqueue a run without changing the status.
 
 Linear → Settings → API → Webhooks → new webhook with URL `https://<maelle>/api/webhooks/linear`,
 resource "Issues", team InstaRadar. Put the signing secret into `LINEAR_WEBHOOK_SECRET` and the
-team into `LINEAR_TEAM_ID` (or `LINEAR_TEAM_KEY`, default `IRDR`). The signature is HMAC-SHA256 of
+team (id and key `IRDR`) is fixed in `shared/config.ts`. The signature is HMAC-SHA256 of
 the raw body; deliveries older than five minutes are rejected; retries are idempotent.
 
 ### Deploying the crons
@@ -586,7 +592,7 @@ the raw body; deliveries older than five minutes are rejected; retries are idemp
 sends it as `Authorization: Bearer ...`). Per-minute crons need the Pro plan (Hobby allows daily
 crons only) and the cron function needs a max duration of 300 s: `nuxt.config.ts` sets
 `nitro.vercel.functions.maxDuration = 300` (raise it on Pro if a tick regularly runs out of budget,
-and keep `JOBS_TICK_BUDGET_MS` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
+and keep `JOBS.tickBudgetMs` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
 call the same URLs; the SQL is in the ADR.
 
 ### Trying it locally

@@ -3,6 +3,7 @@
  * handler. Everything reads the database when SUPABASE_DB_URL is set and degrades safely without it
  * (evaluate answers 'ask', notifications are logged in memory).
  */
+import { OWNER } from '#shared/config'
 import { isDbConfigured } from '../utils/db'
 import { registerService, services } from '../utils/services'
 import { currentAppId } from '../autonomy/app'
@@ -30,7 +31,7 @@ export default defineNitroPlugin(() => {
         const settings = await loadSettings(await currentAppId())
         if (settings.notifyEmail) return settings.notifyEmail
       }
-      return config.notifyEmail || process.env.NOTIFY_EMAIL || null
+      return OWNER.notifyEmail
     },
     async digest() {
       if (!isDbConfigured()) throw new Error('The daily digest needs a database')

@@ -4,7 +4,16 @@
  */
 import { randomUUID } from 'node:crypto'
 import MailComposer from 'nodemailer/lib/mail-composer'
+import { MAILBOX } from '#shared/config'
 import type { OutgoingMail } from './types'
+
+/**
+ * The text that goes out for a reply: the draft body, then the standard "-- " separator (mail
+ * clients collapse what follows it) and Anastasia's signature from shared/config.ts.
+ */
+export function withSignature(body: string): string {
+  return `${body.replace(/\s+$/, '')}\n\n-- \n${MAILBOX.signature}\n`
+}
 
 export function escapeHtml(s: string): string {
   return s

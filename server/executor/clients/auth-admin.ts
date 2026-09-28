@@ -1,6 +1,6 @@
 /**
  * Supabase Auth admin for InstaRadar accounts. InstaRadar's users live in InstaRadar's Supabase
- * project, not in Maelle's, so this uses INSTARADAR_SUPABASE_URL + INSTARADAR_SUPABASE_SERVICE_ROLE_KEY
+ * project, not in Maelle's, so this uses INSTARADAR.supabaseUrl (shared/config.ts) + INSTARADAR_SUPABASE_SERVICE_ROLE_KEY
  * (never `useServiceDb()`, which is Maelle's own project). Assumption, documented in
  * docs/instaradar/: `auth.users.id` equals the `instaradar_user_id` Maelle stores on the ticket.
  */

@@ -80,7 +80,7 @@ export interface MailService {
     draft: ReplyDraft,
     opts?: { sentBy: 'you' | 'auto'; idempotencyKey?: string; cc?: string[] },
   ): Promise<SentMail>
-  /** Alerts and digests to NOTIFY_EMAIL. */
+  /** Alerts and digests to the owner (OWNER.notifyEmail, or settings.notify_email). */
   sendSystemEmail(to: string, subject: string, body: string): Promise<void>
 }
 

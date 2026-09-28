@@ -3,6 +3,7 @@
  * body with LINEAR_WEBHOOK_SECRET), then creates one release_notification ticket per stored customer
  * email when an InstaRadar issue is completed. Linear retries non-200 responses; the handler is idempotent.
  */
+import { LINEAR } from '#shared/config'
 import { poolDb } from '../../jobs/db'
 import {
   LINEAR_SIGNATURE_HEADER,
@@ -26,8 +27,8 @@ export default defineEventHandler(async (event) => {
       signature: getHeader(event, LINEAR_SIGNATURE_HEADER),
       secret: config.linearWebhookSecret || process.env.LINEAR_WEBHOOK_SECRET || null,
       db: poolDb(),
-      teamId: config.linearTeamId || null,
-      teamKey: process.env.LINEAR_TEAM_KEY || 'IRDR',
+      teamId: LINEAR.teamId,
+      teamKey: LINEAR.teamKey,
     })
   } catch (e) {
     if (e instanceof WebhookError) {

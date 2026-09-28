@@ -1,6 +1,6 @@
 /**
  * Linear write client (LINEAR_WRITE_API_KEY, scopes: create issues, create comments). Issues are
- * created in team InstaRadar (LINEAR_TEAM_ID, or the team named LINEAR_TEAM_NAME). Every issue or
+ * created in team InstaRadar (`LINEAR` in shared/config.ts). Every issue or
  * comment Maelle writes carries a marker line ("Maelle ticket #4820"), and `findIssueByMarker` /
  * `listComments` let the action check for it before writing, so a retry never duplicates.
  */

@@ -244,7 +244,7 @@ export async function runAgent(
       maxIterations: config.maxIterations,
       system,
       userMessage,
-      tools: allToolDefinitions(config.instaradarTables),
+      tools: allToolDefinitions(),
       toolContext: { tools: deps.tools, now, emailHistory: () => emailHistory(candidateEmails) },
       finalize: (input) =>
         finalizeSubmission(input, {

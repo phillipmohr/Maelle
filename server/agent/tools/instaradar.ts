@@ -4,10 +4,10 @@
  * `default_transaction_read_only = on` and a statement timeout, and the ad-hoc tool only accepts a
  * single SELECT statement with a forced LIMIT (see `guardSelect`).
  *
- * Table and column names come from `INSTARADAR_TABLES` (assumptions, see config.ts).
+ * Table and column names are the InstaRadar database's, fixed in shared/config.ts (INSTARADAR.db).
  */
 import pg from 'pg'
-import type { InstaradarTables } from '../config'
+import { INSTARADAR } from '#shared/config'
 import type {
   InstaradarAlert,
   InstaradarProfileLookup,
@@ -55,12 +55,7 @@ export function guardSelect(sql: string, maxRows: number = SELECT_MAX_ROWS): str
   return s
 }
 
-const ident = (name: string) => name // names come from config, not from the model
-
-export function createInstaradarReadClient(
-  readUrl: string,
-  tables: InstaradarTables,
-): InstaradarReadClient {
+export function createInstaradarReadClient(readUrl: string): InstaradarReadClient {
   const pool = new pg.Pool({
     connectionString: readUrl,
     max: 2,
@@ -75,25 +70,42 @@ export function createInstaradarReadClient(
   const q = async <T extends pg.QueryResultRow>(text: string, params: unknown[] = []) =>
     (await pool.query<T>(text, params)).rows
 
-  const u = tables.users
-  const tp = tables.trackedProfiles
-  const si = tables.signIns
-  const sc = tables.scans
-  const al = tables.alerts
-  const bl = tables.blockedProfiles
+  // The InstaRadar schema (shared/config.ts): profile (auth user id, email, stripe customer),
+  // subscription (plan, status), tracked_profiles (instagram_username), scan_history and
+  // notification_log hang off tracked_profiles / user_id. Sign-ins come from Supabase's auth log.
+  const T = INSTARADAR.db
+  const profiles = `${T.schema}.${T.profiles}`
+  const subscriptions = `${T.schema}.${T.subscriptions}`
+  const tracked = `${T.schema}.${T.trackedProfiles}`
+  const handleCol = T.trackedHandleColumn
+  const scans = `${T.schema}.${T.scanHistory}`
+  const notifications = `${T.schema}.${T.notificationLog}`
+  const blocked = `${T.schema}.${T.blockedProfiles}`
   const sinceParam = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
 
   return {
     configured: true,
     async findUserByEmail(email) {
       const rows = await q<Record<string, unknown>>(
-        `select ${ident(u.id)} as id, ${ident(u.email)} as email, ${ident(u.plan)} as plan, ${ident(u.status)} as status,
-                ${ident(u.createdAt)} as created_at, ${ident(u.stripeCustomerId)} as stripe_customer_id, ${ident(u.lastSignInAt)} as last_sign_in_at
-         from ${ident(u.table)} where lower(${ident(u.email)}) = lower($1) limit 1`,
+        `select p.id, p.email, s.plan::text as plan, s.status::text as status, p.created_at,
+                coalesce(s.stripe_customer_id, p.stripe_customer_id) as stripe_customer_id
+         from ${profiles} p
+         left join lateral (
+           select plan, status, stripe_customer_id from ${subscriptions} s
+           where s.user_id = p.id order by s.created_at desc limit 1
+         ) s on true
+         where lower(p.email) = lower($1) limit 1`,
         [email],
       )
       const r = rows[0]
       if (!r) return null
+      // auth.users needs its own grant for the read role; without it only the last sign-in is missing.
+      const lastSignInAt = await q<{ at: string | null }>(
+        `select last_sign_in_at as at from auth.users where id::text = $1`,
+        [String(r.id)],
+      )
+        .then((x) => x[0]?.at ?? null)
+        .catch(() => null)
       return {
         id: String(r.id),
         email: String(r.email),
@@ -101,13 +113,13 @@ export function createInstaradarReadClient(
         status: r.status == null ? null : String(r.status),
         createdAt: new Date(String(r.created_at)).toISOString(),
         stripeCustomerId: r.stripe_customer_id == null ? null : String(r.stripe_customer_id),
-        lastSignInAt: r.last_sign_in_at ? new Date(String(r.last_sign_in_at)).toISOString() : null,
+        lastSignInAt: lastSignInAt ? new Date(String(lastSignInAt)).toISOString() : null,
       }
     },
     async listTrackedProfiles(userId) {
       const rows = await q<Record<string, unknown>>(
-        `select ${ident(tp.id)} as id, ${ident(tp.handle)} as handle, ${ident(tp.createdAt)} as since, ${ident(tp.active)} as active
-         from ${ident(tp.table)} where ${ident(tp.userId)} = $1 order by ${ident(tp.createdAt)} limit 100`,
+        `select tracked_profile_id as id, ${handleCol} as handle, created_at as since, is_active as active
+         from ${tracked} where user_id::text = $1 order by created_at limit 100`,
         [userId],
       )
       return rows.map((r) => ({
@@ -119,9 +131,9 @@ export function createInstaradarReadClient(
     },
     async listSignIns(userId, days) {
       const rows = await q<Record<string, unknown>>(
-        `select ${ident(si.createdAt)} as at, ${ident(si.action)} as action
-         from ${ident(si.table)} where ${ident(si.userId)} = $1 and ${ident(si.createdAt)} >= $2
-         order by ${ident(si.createdAt)} desc limit 500`,
+        `select created_at as at, payload->>'action' as action
+         from auth.audit_log_entries where payload->>'actor_id' = $1 and created_at >= $2
+         order by created_at desc limit 500`,
         [userId, sinceParam(days)],
       )
       return rows.map((r) => ({
@@ -131,9 +143,11 @@ export function createInstaradarReadClient(
     },
     async listScans(userId, days) {
       const rows = await q<Record<string, unknown>>(
-        `select ${ident(sc.createdAt)} as at, ${ident(sc.handle)} as handle, ${ident(sc.status)} as status, ${ident(sc.error)} as error
-         from ${ident(sc.table)} where ${ident(sc.userId)} = $1 and ${ident(sc.createdAt)} >= $2
-         order by ${ident(sc.createdAt)} desc limit 500`,
+        `select coalesce(h.scanned_at, h.created_at) as at, t.${handleCol} as handle, h.status::text as status,
+                coalesce(h.error_message, h.error_code) as error
+         from ${scans} h join ${tracked} t on t.tracked_profile_id = h.tracked_profile_id
+         where t.user_id::text = $1 and coalesce(h.scanned_at, h.created_at) >= $2
+         order by 1 desc limit 500`,
         [userId, sinceParam(days)],
       )
       return rows.map((r) => ({
@@ -145,9 +159,10 @@ export function createInstaradarReadClient(
     },
     async listAlerts(userId, days) {
       const rows = await q<Record<string, unknown>>(
-        `select ${ident(al.createdAt)} as at, ${ident(al.handle)} as handle, ${ident(al.type)} as type
-         from ${ident(al.table)} where ${ident(al.userId)} = $1 and ${ident(al.createdAt)} >= $2
-         order by ${ident(al.createdAt)} desc limit 500`,
+        `select coalesce(l.sent_at, l.created_at) as at, t.${handleCol} as handle, l.event_type::text as type
+         from ${notifications} l left join ${tracked} t on t.tracked_profile_id = l.tracked_profile_id
+         where l.user_id::text = $1 and l.created_at >= $2
+         order by 1 desc limit 500`,
         [userId, sinceParam(days)],
       )
       return rows.map((r) => ({
@@ -158,18 +173,18 @@ export function createInstaradarReadClient(
     },
     async lookupProfile(handle) {
       const h = handle.replace(/^@/, '').toLowerCase()
-      const [tracked, blocked] = await Promise.all([
+      const [trackedRows, blockedRows] = await Promise.all([
         q<{ n: string }>(
-          `select count(*)::text as n from ${ident(tp.table)} where lower(${ident(tp.handle)}) = $1`,
+          `select count(*)::text as n from ${tracked} where lower(${handleCol}) = $1 and is_active`,
           [h],
         ),
-        q<{ n: string }>(
-          `select count(*)::text as n from ${ident(bl.table)} where lower(${ident(bl.handle)}) = $1`,
-          [h],
-        ).catch(() => [{ n: '0' }]),
+        // The blocklist table arrives with the InstaRadar-side change; until then nothing is blocked.
+        q<{ n: string }>(`select count(*)::text as n from ${blocked} where username = $1`, [
+          h,
+        ]).catch(() => [{ n: '0' }]),
       ])
-      const trackedByUsers = Number(tracked[0]?.n ?? 0)
-      const isBlocked = Number(blocked[0]?.n ?? 0) > 0
+      const trackedByUsers = Number(trackedRows[0]?.n ?? 0)
+      const isBlocked = Number(blockedRows[0]?.n ?? 0) > 0
       if (trackedByUsers === 0 && !isBlocked) return null
       return { handle: h, trackedByUsers, blocked: isBlocked }
     },

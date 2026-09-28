@@ -48,12 +48,12 @@ re-add a blocked profile; the check above only makes the error message friendly.
 const blocked = new Set(
   (await serviceDb.from('blocked_profiles').select('username')).data?.map((r) => r.username) ?? [],
 )
-const due = tracked.filter((t) => !blocked.has(normalizeHandle(t.username)))
+const due = tracked.filter((t) => !blocked.has(normalizeHandle(t.instagram_username)))
 // Optional hygiene: remove tracking rows that slipped through.
 await serviceDb
   .from('tracked_profiles')
   .delete()
-  .in('username', [...blocked])
+  .in('instagram_username', [...blocked])
 ```
 
 ## 3. Displaying
@@ -64,7 +64,7 @@ instead of `tracked_profiles`, or add the join to the existing queries:
 ```sql
 select t.* from tracked_profiles t
 where t.user_id = auth.uid()
-  and not exists (select 1 from blocked_profiles b where b.username = lower(t.username));
+  and not exists (select 1 from blocked_profiles b where b.username = lower(t.instagram_username));
 ```
 
 Stored snapshots, follower diffs and media of a blocked profile stay in the database (so the
@@ -78,7 +78,7 @@ For `remove_from_tracking` the executor runs, in one transaction on `INSTARADAR_
 ```sql
 insert into public.blocked_profiles (username, reason, source) values ($1, $2, 'Maelle ticket #4831')
   on conflict (username) do nothing;
-delete from public.tracked_profiles where lower(username) = $1;
+delete from public.tracked_profiles where lower(instagram_username) = $1;
 ```
 
 and records `{ handle, alreadyBlocked, trackingStopped }` in Maelle's `action_executions` row.

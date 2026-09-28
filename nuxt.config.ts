@@ -7,6 +7,12 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'anon-key-placeholder
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 // Development only: explore the UI against seed data without a Supabase project. Never in production.
 const AUTH_DISABLED = process.env.AUTH_DISABLED === 'true' && process.env.NODE_ENV !== 'production'
+// Links in notification mails: a custom domain when set, else Vercel's production URL, else dev.
+const SITE_URL =
+  process.env.NUXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : 'http://localhost:3000')
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-09-01',
@@ -68,28 +74,13 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
-    // server-only
-    allowedUserEmail: process.env.ALLOWED_USER_EMAIL || '',
+    // Server-only. Every other secret is read from process.env by the module that owns it, and
+    // everything that is not a secret is hardcoded in shared/config.ts.
     authDisabled: AUTH_DISABLED,
     cronSecret: process.env.CRON_SECRET || '',
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
-    supportMailbox: process.env.SUPPORT_MAILBOX || 'support@instaradar.app',
-    stripeReadKey: process.env.STRIPE_READ_KEY || '',
-    stripeWriteKey: process.env.STRIPE_WRITE_KEY || '',
-    instaradarDbReadUrl: process.env.INSTARADAR_DB_READ_URL || '',
-    instaradarDbWriteUrl: process.env.INSTARADAR_DB_WRITE_URL || '',
-    vercelApiToken: process.env.VERCEL_API_TOKEN || '',
-    vercelTeamId: process.env.VERCEL_TEAM_ID || '',
-    vercelInstaradarProjectId: process.env.VERCEL_INSTARADAR_PROJECT_ID || '',
-    notionReadToken: process.env.NOTION_READ_TOKEN || '',
-    notionWriteToken: process.env.NOTION_WRITE_TOKEN || '',
-    linearReadApiKey: process.env.LINEAR_READ_API_KEY || '',
-    linearWriteApiKey: process.env.LINEAR_WRITE_API_KEY || '',
-    linearTeamId: process.env.LINEAR_TEAM_ID || '',
     linearWebhookSecret: process.env.LINEAR_WEBHOOK_SECRET || '',
-    notifyEmail: process.env.NOTIFY_EMAIL || '',
     public: {
-      siteUrl: process.env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      siteUrl: SITE_URL,
       appName: 'Maelle',
     },
   },

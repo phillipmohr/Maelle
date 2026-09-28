@@ -19,7 +19,7 @@ create table if not exists public.vercel_logs (
   created_at timestamptz not null default now()
 );
 
-comment on table public.vercel_logs is 'InstaRadar runtime logs posted by a Vercel log drain (JSON format). Read by the agent when VERCEL_LOGS_SOURCE=drain.';
+comment on table public.vercel_logs is 'InstaRadar runtime logs posted by a Vercel log drain (JSON format). Read by the agent when the log drain adapter is wired in (server/agent/tools/index.ts).';
 
 create index if not exists vercel_logs_at_idx on public.vercel_logs (at desc);
 

@@ -4,7 +4,7 @@
  * with threading headers, and find a sent mail by its Message-ID (exactly-once recovery).
  */
 
-export type MailProviderKind = 'gmail' | 'imap' | 'fake'
+export type MailProviderKind = 'imap' | 'fake'
 
 export interface MailCursor {
   /** Gmail: historyId · IMAP: last seen UID · fake: number of messages seen. */

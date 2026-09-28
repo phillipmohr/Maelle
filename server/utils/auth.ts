@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { serverSupabaseUser } from '#supabase/server'
+import { OWNER } from '#shared/config'
 
 export interface SessionInfo {
   email: string
@@ -15,10 +16,10 @@ export interface SessionInfo {
  */
 export async function requireAllowedUser(event: H3Event): Promise<SessionInfo> {
   const config = useRuntimeConfig(event)
-  const allowed = (config.allowedUserEmail || '').toLowerCase()
+  const allowed = OWNER.email.toLowerCase()
 
   if (import.meta.dev && config.authDisabled) {
-    return { email: allowed || 'dev@maelle.local', userId: null, authDisabled: true }
+    return { email: allowed, userId: null, authDisabled: true }
   }
 
   const user = await serverSupabaseUser(event).catch(() => null)

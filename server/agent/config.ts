@@ -5,29 +5,29 @@
  * here, so the agent code path cannot obtain them even by accident;
  * `tests/agent/credentials.test.ts` proves it.
  *
+ * Everything that is not a secret (models, the InstaRadar project, the Linear team, the mailbox,
+ * the tuning knobs) is hardcoded in `shared/config.ts`.
+ *
  * `process.env` is used instead of `useRuntimeConfig()` so the same module runs inside Nitro,
  * in vitest and in the eval runner.
  */
-
-export const DEFAULT_AGENT_MODEL = 'claude-fable-5-1'
-export const DEFAULT_AGENT_SMALL_MODEL = 'claude-sonnet-5'
+import { AGENT, INSTARADAR, LINEAR, MAILBOX, MODELS } from '#shared/config'
 
 export interface AgentRuntimeConfig {
   /** Claude API key (agent research + drafting). */
   anthropicApiKey: string
-  /** Most capable model for the agent run. Env: AGENT_MODEL. */
+  /** Most capable model for the agent run. */
   model: string
-  /** Smaller model for the consistency check. Env: AGENT_SMALL_MODEL. */
+  /** Smaller model for the consistency check. */
   smallModel: string
   /** Restricted, read-only Stripe key. */
   stripeReadKey: string
   /** Postgres URL of a SELECT-only role on the InstaRadar Supabase. */
   instaradarDbReadUrl: string
   vercelApiToken: string
-  vercelTeamId: string
-  vercelInstaradarProjectId: string
-  /** 'api' reads the Vercel runtime logs endpoint, 'drain' reads the log drain table (see README). */
-  vercelLogsSource: 'api' | 'drain'
+  /** Vercel team slug and project name of InstaRadar (runtime logs). */
+  vercelTeamSlug: string
+  vercelProject: string
   /** Notion integration with read content only. */
   notionReadToken: string
   /** Linear read key. */
@@ -41,160 +41,48 @@ export interface AgentRuntimeConfig {
   sourceTimeoutMs: number
   /** How long the Notion knowledge stays cached in the process (ms). */
   knowledgeCacheTtlMs: number
-  /** Table and column names of the InstaRadar database (assumptions, env-overridable). */
-  instaradarTables: InstaradarTables
 }
 
 /**
- * Table and column names of the InstaRadar Supabase database. The InstaRadar repository was not
- * reachable when this was written, so these are ASSUMPTIONS with sensible Supabase defaults.
- * Override with `INSTARADAR_TABLES` (a JSON object with the same shape, partial is fine).
+ * The public URL of this Maelle deployment, for links in notifications. `NUXT_PUBLIC_SITE_URL`
+ * overrides (custom domain); otherwise Vercel's own production URL; otherwise the dev server.
  */
-export interface InstaradarTables {
-  users: {
-    table: string
-    id: string
-    email: string
-    plan: string
-    status: string
-    createdAt: string
-    stripeCustomerId: string
-    lastSignInAt: string
-  }
-  trackedProfiles: {
-    table: string
-    id: string
-    userId: string
-    handle: string
-    createdAt: string
-    active: string
-  }
-  signIns: { table: string; userId: string; createdAt: string; action: string }
-  scans: {
-    table: string
-    userId: string
-    handle: string
-    createdAt: string
-    status: string
-    error: string
-  }
-  alerts: { table: string; userId: string; handle: string; type: string; createdAt: string }
-  blockedProfiles: { table: string; handle: string; createdAt: string }
-}
-
-export const DEFAULT_INSTARADAR_TABLES: InstaradarTables = {
-  users: {
-    table: 'public.profiles',
-    id: 'id',
-    email: 'email',
-    plan: 'plan',
-    status: 'subscription_status',
-    createdAt: 'created_at',
-    stripeCustomerId: 'stripe_customer_id',
-    lastSignInAt: 'last_sign_in_at',
-  },
-  trackedProfiles: {
-    table: 'public.tracked_profiles',
-    id: 'id',
-    userId: 'user_id',
-    handle: 'username',
-    createdAt: 'created_at',
-    active: 'is_active',
-  },
-  signIns: {
-    table: 'auth.audit_log_entries',
-    userId: "payload->>'actor_id'",
-    createdAt: 'created_at',
-    action: "payload->>'action'",
-  },
-  scans: {
-    table: 'public.scans',
-    userId: 'user_id',
-    handle: 'username',
-    createdAt: 'created_at',
-    status: 'status',
-    error: 'error',
-  },
-  alerts: {
-    table: 'public.alerts',
-    userId: 'user_id',
-    handle: 'username',
-    type: 'type',
-    createdAt: 'created_at',
-  },
-  blockedProfiles: {
-    table: 'public.blocked_profiles',
-    handle: 'username',
-    createdAt: 'created_at',
-  },
-}
-
-function mergeTables(json: string | undefined): InstaradarTables {
-  if (!json) return DEFAULT_INSTARADAR_TABLES
-  let parsed: Partial<Record<keyof InstaradarTables, Record<string, string>>>
-  try {
-    parsed = JSON.parse(json)
-  } catch {
-    throw new Error('INSTARADAR_TABLES must be a JSON object')
-  }
-  const out = structuredClone(DEFAULT_INSTARADAR_TABLES) as unknown as Record<
-    string,
-    Record<string, string>
-  >
-  for (const [group, cols] of Object.entries(parsed)) {
-    if (!out[group] || !cols) continue
-    for (const [k, v] of Object.entries(cols)) if (typeof v === 'string') out[group]![k] = v
-  }
-  return out as unknown as InstaradarTables
-}
-
-function int(value: string | undefined, fallback: number): number {
-  const n = Number(value)
-  return Number.isFinite(n) && n > 0 ? n : fallback
+export function siteUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.NUXT_PUBLIC_SITE_URL) return env.NUXT_PUBLIC_SITE_URL
+  if (env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${env.VERCEL_PROJECT_PRODUCTION_URL}`
+  return 'http://localhost:3000'
 }
 
 /** Read-only view of the environment. Never returns a write credential. */
 export function agentRuntimeConfig(env: NodeJS.ProcessEnv = process.env): AgentRuntimeConfig {
   return {
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
-    model: env.AGENT_MODEL || DEFAULT_AGENT_MODEL,
-    smallModel: env.AGENT_SMALL_MODEL || DEFAULT_AGENT_SMALL_MODEL,
+    model: MODELS.agent,
+    smallModel: MODELS.small,
     stripeReadKey: env.STRIPE_READ_KEY || '',
     instaradarDbReadUrl: env.INSTARADAR_DB_READ_URL || '',
     vercelApiToken: env.VERCEL_API_TOKEN || '',
-    vercelTeamId: env.VERCEL_TEAM_ID || '',
-    vercelInstaradarProjectId: env.VERCEL_INSTARADAR_PROJECT_ID || '',
-    vercelLogsSource: env.VERCEL_LOGS_SOURCE === 'drain' ? 'drain' : 'api',
+    vercelTeamSlug: INSTARADAR.vercel.teamSlug,
+    vercelProject: INSTARADAR.vercel.project,
     notionReadToken: env.NOTION_READ_TOKEN || '',
     linearReadApiKey: env.LINEAR_READ_API_KEY || '',
-    linearTeamId: env.LINEAR_TEAM_ID || '',
-    supportMailbox: env.SUPPORT_MAILBOX || 'support@instaradar.app',
-    siteUrl: env.NUXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-    maxIterations: int(env.AGENT_MAX_ITERATIONS, 16),
-    sourceTimeoutMs: int(env.AGENT_SOURCE_TIMEOUT_MS, 20_000),
-    knowledgeCacheTtlMs: int(env.KNOWLEDGE_CACHE_TTL_MS, 5 * 60_000),
-    instaradarTables: mergeTables(env.INSTARADAR_TABLES),
+    linearTeamId: LINEAR.teamId,
+    supportMailbox: MAILBOX.address,
+    siteUrl: siteUrlFromEnv(env),
+    maxIterations: AGENT.maxIterations,
+    sourceTimeoutMs: AGENT.sourceTimeoutMs,
+    knowledgeCacheTtlMs: AGENT.knowledgeCacheTtlMs,
   }
 }
 
 /** Every environment variable the agent reads. Used by the credentials test and the README. */
 export const AGENT_ENV_VARS = [
   'ANTHROPIC_API_KEY',
-  'AGENT_MODEL',
-  'AGENT_SMALL_MODEL',
   'STRIPE_READ_KEY',
   'INSTARADAR_DB_READ_URL',
-  'INSTARADAR_TABLES',
   'VERCEL_API_TOKEN',
-  'VERCEL_TEAM_ID',
-  'VERCEL_INSTARADAR_PROJECT_ID',
-  'VERCEL_LOGS_SOURCE',
   'NOTION_READ_TOKEN',
   'LINEAR_READ_API_KEY',
-  'LINEAR_TEAM_ID',
-  'SUPPORT_MAILBOX',
   'NUXT_PUBLIC_SITE_URL',
-  'AGENT_MAX_ITERATIONS',
-  'AGENT_SOURCE_TIMEOUT_MS',
-  'KNOWLEDGE_CACHE_TTL_MS',
+  'VERCEL_PROJECT_PRODUCTION_URL',
 ] as const

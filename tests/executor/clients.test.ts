@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createClientsFromEnv, fakesAllowed } from '../../server/executor/clients'
 import { createFakeStripe } from '../../server/executor/clients/stripe-fake'
-import { instaradarConfigFromEnv, parseUserTables } from '../../server/executor/clients/instaradar'
+import { USER_TABLES } from '../../server/executor/clients/instaradar'
 import { ProviderError, formatActionError } from '../../server/executor/errors'
 
 describe('fake Stripe idempotency', () => {
@@ -81,7 +81,6 @@ describe('clients from the environment', () => {
       STRIPE_WRITE_KEY: 'rk_test_placeholder',
       LINEAR_WRITE_API_KEY: 'lin_api_placeholder',
       INSTARADAR_DB_WRITE_URL: 'postgresql://executor@127.0.0.1:1/instaradar',
-      INSTARADAR_SUPABASE_URL: 'https://x.supabase.co',
       INSTARADAR_SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
     })
     expect(real.modes).toEqual({
@@ -92,18 +91,9 @@ describe('clients from the environment', () => {
     })
   })
 
-  it('reads the InstaRadar table configuration', () => {
-    expect(parseUserTables('tracked_profiles:user_id, profiles:id,sessions')).toEqual([
-      { table: 'tracked_profiles', column: 'user_id' },
-      { table: 'profiles', column: 'id' },
-      { table: 'sessions', column: 'user_id' },
-    ])
-    const cfg = instaradarConfigFromEnv({
-      INSTARADAR_BLOCKED_PROFILES_TABLE: 'blocklist',
-      INSTARADAR_HANDLE_COLUMN: 'x',
-    })
-    expect(cfg.blockedProfilesTable).toBe('blocklist')
-    expect(cfg.blockedHandleColumn).toBe('username')
-    expect(cfg.userTables).toHaveLength(2)
+  it('deletes a user from the InstaRadar tables children first, the profile last', () => {
+    expect(USER_TABLES[0]).toEqual({ table: 'tracked_profiles', column: 'user_id' })
+    expect(USER_TABLES[USER_TABLES.length - 1]).toEqual({ table: 'profile', column: 'id' })
+    expect(USER_TABLES.map((t) => t.table)).toContain('subscription')
   })
 })

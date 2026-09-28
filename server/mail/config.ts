@@ -1,17 +1,11 @@
 /**
- * Mail configuration from the environment (IRDR-455). Variable names are in .env.example.
- * Provider selection: MAIL_PROVIDER=gmail|imap|fake, or inferred from the credentials present;
- * without any credentials the in-memory fake is used (tests, dev server).
+ * Mail configuration (IRDR-455). The mailbox, its IMAP and SMTP hosts, the sender name and the
+ * tuning knobs are fixed in `shared/config.ts`; the environment carries only the mailbox password
+ * (`MAIL_PASSWORD`). Without it the in-memory fake is used (tests, dev server), optionally fed from
+ * `.eml` files in `MAIL_FAKE_DIR`.
  */
+import { MAILBOX, OWNER } from '#shared/config'
 import type { MailProviderKind } from './types'
-
-export interface GmailConfig {
-  clientId: string | null
-  clientSecret: string | null
-  refreshToken: string | null
-  serviceAccountJson: string | null
-  impersonateUser: string | null
-}
 
 export interface ImapConfig {
   host: string
@@ -19,9 +13,9 @@ export interface ImapConfig {
   secure: boolean
   user: string
   password: string
-  /** Sent folder path; detected via the \Sent special-use flag when empty. */
+  /** Sent folder path; detected via the \Sent special-use flag when null. */
   sentFolder: string | null
-  /** Append sent mail to the Sent folder (Gmail's SMTP does this by itself). */
+  /** Append sent mail to the Sent folder so it shows up in the mailbox like a normal reply. */
   appendSent: boolean
 }
 
@@ -47,8 +41,6 @@ export interface MailConfig {
   fakeDir: string | null
   /** A `sending` row older than this is treated as stuck and taken over (after asking the provider). */
   stuckSendMinutes: number
-  /** Accepted clock drift for the Linear webhook timestamp. */
-  gmail: GmailConfig | null
   imap: ImapConfig | null
   smtp: SmtpConfig | null
 }
@@ -59,22 +51,6 @@ const str = (v: string | undefined): string | null => {
   const t = (v ?? '').trim()
   return t.length ? t : null
 }
-const int = (v: string | undefined, fallback: number): number => {
-  const n = Number(v)
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback
-}
-const bool = (v: string | undefined, fallback: boolean): boolean => {
-  const t = (v ?? '').trim().toLowerCase()
-  if (!t) return fallback
-  return t === 'true' || t === '1' || t === 'yes'
-}
-
-export function hasGmailCredentials(env: Env): boolean {
-  return Boolean(
-    (env.GMAIL_OAUTH_CLIENT_ID && env.GMAIL_OAUTH_CLIENT_SECRET && env.GMAIL_OAUTH_REFRESH_TOKEN) ||
-    env.GMAIL_SERVICE_ACCOUNT_JSON,
-  )
-}
 
 export class MailConfigError extends Error {
   constructor(message: string) {
@@ -83,75 +59,43 @@ export class MailConfigError extends Error {
   }
 }
 
-/** Explicit MAIL_PROVIDER wins; otherwise the credentials decide; nothing configured means fake. */
+/** The real mailbox when its password is set, the in-memory fake otherwise. */
 export function detectProvider(env: Env = process.env): MailProviderKind {
-  const explicit = (env.MAIL_PROVIDER ?? '').trim().toLowerCase()
-  if (explicit === 'gmail' || explicit === 'imap' || explicit === 'fake') return explicit
-  if (explicit)
-    throw new MailConfigError(`MAIL_PROVIDER must be gmail, imap or fake, got "${explicit}"`)
-  if (hasGmailCredentials(env)) return 'gmail'
-  if (str(env.IMAP_HOST)) return 'imap'
-  return 'fake'
+  return str(env.MAIL_PASSWORD) ? 'imap' : 'fake'
 }
 
 export function mailConfigFromEnv(env: Env = process.env): MailConfig {
   const provider = detectProvider(env)
-  const mailbox = (str(env.SUPPORT_MAILBOX) ?? 'support@instaradar.app').toLowerCase()
   const config: MailConfig = {
     provider,
-    mailbox,
-    fromName: str(env.MAIL_FROM_NAME) ?? 'Anastasia (InstaRadar Support)',
-    notifyEmail: str(env.NOTIFY_EMAIL),
-    fetchLimit: int(env.MAIL_FETCH_LIMIT, 50),
-    bootstrapDays: int(env.MAIL_BOOTSTRAP_DAYS, 1),
-    markRead: bool(env.MAIL_MARK_READ, false),
+    mailbox: MAILBOX.address,
+    fromName: MAILBOX.fromName,
+    notifyEmail: OWNER.notifyEmail,
+    fetchLimit: MAILBOX.fetchLimit,
+    bootstrapDays: MAILBOX.bootstrapDays,
+    markRead: MAILBOX.markRead,
     fakeDir: str(env.MAIL_FAKE_DIR),
-    stuckSendMinutes: int(env.MAIL_STUCK_SEND_MINUTES, 5),
-    gmail: null,
+    stuckSendMinutes: MAILBOX.stuckSendMinutes,
     imap: null,
     smtp: null,
   }
-  if (provider === 'gmail') {
-    config.gmail = {
-      clientId: str(env.GMAIL_OAUTH_CLIENT_ID),
-      clientSecret: str(env.GMAIL_OAUTH_CLIENT_SECRET),
-      refreshToken: str(env.GMAIL_OAUTH_REFRESH_TOKEN),
-      serviceAccountJson: str(env.GMAIL_SERVICE_ACCOUNT_JSON),
-      impersonateUser: str(env.GMAIL_IMPERSONATE_USER),
-    }
-    if (!hasGmailCredentials(env)) {
-      throw new MailConfigError(
-        'MAIL_PROVIDER=gmail needs GMAIL_OAUTH_CLIENT_ID + GMAIL_OAUTH_CLIENT_SECRET + GMAIL_OAUTH_REFRESH_TOKEN, or GMAIL_SERVICE_ACCOUNT_JSON (+ GMAIL_IMPERSONATE_USER)',
-      )
-    }
-  }
   if (provider === 'imap') {
-    const host = str(env.IMAP_HOST)
-    const user = str(env.IMAP_USER)
-    const password = str(env.IMAP_PASSWORD)
-    const smtpHost = str(env.SMTP_HOST)
-    if (!host || !user || !password || !smtpHost) {
-      throw new MailConfigError(
-        'MAIL_PROVIDER=imap needs IMAP_HOST, IMAP_USER, IMAP_PASSWORD and SMTP_HOST (SMTP_USER/SMTP_PASSWORD default to the IMAP ones)',
-      )
-    }
-    const imapPort = int(env.IMAP_PORT, 993)
-    const smtpPort = int(env.SMTP_PORT, 465)
+    const password = str(env.MAIL_PASSWORD)!
     config.imap = {
-      host,
-      port: imapPort,
-      secure: bool(env.IMAP_SECURE, imapPort === 993),
-      user,
+      host: MAILBOX.imap.host,
+      port: MAILBOX.imap.port,
+      secure: MAILBOX.imap.secure,
+      user: MAILBOX.address,
       password,
-      sentFolder: str(env.IMAP_SENT_FOLDER),
-      appendSent: bool(env.IMAP_APPEND_SENT, true),
+      sentFolder: null,
+      appendSent: true,
     }
     config.smtp = {
-      host: smtpHost,
-      port: smtpPort,
-      secure: bool(env.SMTP_SECURE, smtpPort === 465),
-      user: str(env.SMTP_USER) ?? user,
-      password: str(env.SMTP_PASSWORD) ?? password,
+      host: MAILBOX.smtp.host,
+      port: MAILBOX.smtp.port,
+      secure: MAILBOX.smtp.secure,
+      user: MAILBOX.address,
+      password,
     }
   }
   return config

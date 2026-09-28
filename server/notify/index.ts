@@ -1,5 +1,5 @@
 /**
- * notify(kind, payload): email to NOTIFY_EMAIL (or settings.notify_email) through
+ * notify(kind, payload): email to settings.notify_email (or OWNER.notifyEmail) through
  * services.mail.sendSystemEmail, logged and deduped in the notifications table.
  *
  *   high_risk_ticket  once per ticket, sent by autonomy.evaluate as soon as the ticket needs a decision
@@ -19,7 +19,7 @@ import {
 
 export interface NotifyDeps {
   sendSystemEmail: (to: string, subject: string, body: string) => Promise<void>
-  /** settings.notify_email, then NOTIFY_EMAIL; null when neither is set. */
+  /** settings.notify_email, then OWNER.notifyEmail from shared/config.ts. */
   recipient: () => Promise<string | null>
   log: NotificationLog
   /** Builds the digest data since the last digest. */
@@ -90,7 +90,7 @@ export function createNotify(deps: NotifyDeps): NotifyFn {
         status: 'skipped',
         recipient: null,
         ...mail,
-        error: 'No recipient: set NOTIFY_EMAIL or the notify email on the Autonomy page',
+        error: 'No recipient: set the notify email on the Autonomy page',
       })
       logger(`[notify] ${kind} skipped, no recipient configured`)
       return

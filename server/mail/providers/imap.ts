@@ -1,8 +1,8 @@
 /**
  * IMAP + SMTP provider (IRDR-455) for a mailbox that is not on Google Workspace. Cursor: the last
  * seen INBOX UID together with the mailbox UIDVALIDITY; a changed UIDVALIDITY triggers a full sync
- * of the last MAIL_BOOTSTRAP_DAYS. Sending goes through SMTP and the same bytes are appended to the
- * Sent folder (found via the \Sent special-use flag or IMAP_SENT_FOLDER).
+ * of the last MAILBOX.bootstrapDays. Sending goes through SMTP and the same bytes are appended to the
+ * Sent folder (found via the \Sent special-use flag, or the configured sentFolder).
  */
 import { ImapFlow } from 'imapflow'
 import { createTransport, type Transporter } from 'nodemailer'

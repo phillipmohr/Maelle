@@ -61,12 +61,7 @@ export function makeMailContext(db: Db, now = new Date('2026-09-27T20:00:00Z')):
     notify,
     now: () => clock.now,
     log: () => {},
-    config: mailConfigFromEnv({
-      MAIL_PROVIDER: 'fake',
-      SUPPORT_MAILBOX: 'support@instaradar.app',
-      NOTIFY_EMAIL: 'phillip@example.com',
-      MAIL_STUCK_SEND_MINUTES: '5',
-    }),
+    config: { ...mailConfigFromEnv({}), notifyEmail: 'phillip@example.com' },
   })
   return Object.assign(ctx, { provider, store, notify, clock }) as TestMailContext
 }

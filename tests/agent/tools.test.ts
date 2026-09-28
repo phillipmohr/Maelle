@@ -13,7 +13,6 @@ import { plainProperty } from '../../server/agent/tools/notion'
 import { loadStripeBundle } from '../../server/agent/tools/stripe'
 import { matchesLogQuery } from '../../server/agent/tools/vercel'
 import { candidateEmailsFor, extractEmails, extractNameHints } from '../../server/agent/research'
-import { DEFAULT_INSTARADAR_TABLES } from '../../server/agent/config'
 import { priya, rachel } from '../../evals/fixtures/worlds'
 
 describe('guarded SELECT', () => {
@@ -108,7 +107,7 @@ describe('text extraction helpers', () => {
 
 describe('tool definitions', () => {
   it('lists the research tools plus submit_proposal with a JSON schema of the proposal', () => {
-    const defs = allToolDefinitions(DEFAULT_INSTARADAR_TABLES)
+    const defs = allToolDefinitions()
     const names = defs.map((d) => d.name)
     expect(names).toEqual(
       expect.arrayContaining([
@@ -139,9 +138,10 @@ describe('tool definitions', () => {
     )
     expect(Object.keys(schema.properties)).toContain('translations')
     expect(JSON.stringify(schema)).not.toContain('$schema')
-    expect(defs.find((d) => d.name === 'instaradar_select')?.description).toContain(
-      'public.profiles',
-    )
+    const selectDoc = defs.find((d) => d.name === 'instaradar_select')?.description ?? ''
+    expect(selectDoc).toContain('public.profile(')
+    expect(selectDoc).toContain('public.subscription(')
+    expect(selectDoc).toContain('instagram_username')
   })
 })
 

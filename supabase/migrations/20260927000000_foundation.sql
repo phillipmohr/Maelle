@@ -12,7 +12,7 @@ create table if not exists public.allowed_users (
   created_at timestamptz not null default now()
 );
 
-comment on table public.allowed_users is 'The only emails that may sign in. Filled from ALLOWED_USER_EMAIL by pnpm db:migrate.';
+comment on table public.allowed_users is 'The only emails that may sign in. Filled from OWNER.email (shared/config.ts) by pnpm db:migrate.';
 
 create or replace function public.is_allowed_user()
 returns boolean
