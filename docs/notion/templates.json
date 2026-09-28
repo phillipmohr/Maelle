@@ -1,0 +1,180 @@
+{
+  "source": "Notion Templates DB, collection://3e8c931f-6ae5-8071-98a0-000befdd6354, snapshot 2026-09-27",
+  "note": "Reply texts are the Notion templates verbatim (placeholders in [brackets]). 'Research in Stripe/Supabase/Vercel' and 'Search knowledge base' describe research, not executable actions.",
+  "templates": [
+    {
+      "key": "cancellation_only",
+      "name": "Cancellation only",
+      "url": "https://app.notion.com/p/3e8c931f6ae581429b0ecd9c9abee871",
+      "trigger": "Customer wants to cancel their subscription (no refund mentioned).",
+      "actions": ["Cancel at period end", "Research in Stripe/Supabase/Vercel"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription, so you won't be charged again. You keep full access to all [plan] features until [period end date].\n\nIf you don't mind me asking, what made you decide to cancel? I read every answer, and it helps us decide what to improve next.\n\nThanks for giving InstaRadar a try, you're always welcome back!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "cancellation_reason_ask",
+      "name": "Cancellation + reason ask",
+      "url": "https://app.notion.com/p/3e8c931f6ae58147b800e658bf20d6d7",
+      "trigger": "Customer cancels and we want to learn why (feedback).",
+      "actions": ["Cancel at period end"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription, so you won't be charged again. You keep full access to all [plan] features until [period end date].\n\nCould I ask one quick question: what was the main reason you cancelled? For example the price, a missing feature, or something that didn't work as expected. A one-line answer is plenty, and I read every single one.\n\nThanks for giving InstaRadar a try, you're always welcome back!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "refund_request",
+      "name": "Refund request (latest payment)",
+      "url": "https://app.notion.com/p/3e8c931f6ae58118a872c601963e97c1",
+      "trigger": "Customer requests a refund. Implies immediate cancellation and full data loss.",
+      "actions": [
+        "Research in Stripe/Supabase/Vercel",
+        "Cancel immediately",
+        "Refund latest payment"
+      ],
+      "requiresConfirmation": true,
+      "reply": "Hi, thanks for reaching out!\n\nI'd be happy to refund your latest payment of [amount] from [date]. One important note first: a refund cancels your subscription immediately, and your tracking history for [profile] is deleted right away. This can't be undone.\n\nJust reply to confirm and I'll process it straight away. The money then shows up on your statement within 5 to 10 business days, depending on your bank.\n\nIf you don't mind me asking, what made you decide to leave? I read every answer, and it genuinely helps us improve.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "cancellation_refund_deletion",
+      "name": "Cancellation + refund + account deletion",
+      "url": "https://app.notion.com/p/3e8c931f6ae58182b5d7efa7ab6c6904",
+      "trigger": "Customer wants to cancel, get a refund, and delete their account entirely.",
+      "actions": [
+        "Research in Stripe/Supabase/Vercel",
+        "Cancel immediately",
+        "Refund latest payment",
+        "Delete account"
+      ],
+      "requiresConfirmation": true,
+      "reply": "Hi, thanks for reaching out!\n\nI can take care of all three for you: cancel your subscription, refund your latest payment of [amount] from [date], and delete your account. One important note first: this happens immediately, and all your data, including the tracking history for [profile], is permanently deleted. This can't be undone.\n\nJust reply to confirm and I'll do it right away. The refund then shows up on your statement within 5 to 10 business days, depending on your bank.\n\nIf you don't mind me asking, what made you decide to leave? It genuinely helps us improve.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "account_deletion",
+      "name": "Account deletion request",
+      "url": "https://app.notion.com/p/3e8c931f6ae581cab33bf43aa4d9f8bb",
+      "trigger": "Customer asks to delete/terminate their account. Requires cancellation first.",
+      "actions": ["Research in Stripe/Supabase/Vercel", "Cancel immediately", "Delete account"],
+      "requiresConfirmation": true,
+      "reply": "Hi, thanks for reaching out!\n\nI can delete your account for you. One important note first: this cancels your subscription immediately, ends your remaining [plan] access right away, and permanently deletes all your data, including your tracking history. This can't be undone.\n\nJust reply to confirm and I'll delete it straight away.\n\nIf you don't mind me asking, what made you decide to leave? I read every answer, and it helps us improve.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "second_refund_request",
+      "name": "Second refund request (needs reason)",
+      "url": "https://app.notion.com/p/3e8c931f6ae58171ad14ff06d294b020",
+      "trigger": "Customer requests a refund but already received one before. Needs a valid reason (e.g. technical issue) before deciding.",
+      "actions": ["Research in Stripe/Supabase/Vercel"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out!\n\nI see I already refunded a payment for you on [date]. Our no-questions-asked refund applies once per customer, so for a second refund I need to understand what happened first.\n\nCould you tell me what went wrong? For example, a feature that didn't work or data that looked off. If something on our side didn't work as it should, I'll look into it right away and make it right.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "feature_request",
+      "name": "Feature request / feedback",
+      "url": "https://app.notion.com/p/3e8c931f6ae581988be7cd93f5d89fd8",
+      "trigger": "Customer suggests a feature or sends product feedback.",
+      "actions": ["Create Linear ticket", "Store email for release notification"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks so much for the suggestion!\n\n[Restate the idea concretely, e.g. adding the date and time to downloaded file names] is a great idea. I've added it to our roadmap with your email attached.\n\nI'll let you know personally as soon as it's live. And if anything else comes to mind, just reply to this email, I read every idea!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "bug_report",
+      "name": "Bug report",
+      "url": "https://app.notion.com/p/3e8c931f6ae58114beabdeaddfaca242",
+      "trigger": "Customer reports something not working correctly.",
+      "actions": [
+        "Search knowledge base",
+        "Research in Stripe/Supabase/Vercel",
+        "Create Linear ticket"
+      ],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reporting this!\n\nI looked into your account and our logs, and you're right: this is a bug on our side. [Short, concrete description of the bug]. I'm sorry for the confusion it caused.\n\nGood to know: this only affects [affected area]. [Unaffected area, e.g. your follower list] is still 100% accurate.\n\nI've passed it to our engineering team with your details, and I'll email you personally as soon as the fix is live. Thanks for helping us make InstaRadar better!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "unsatisfied_customer",
+      "name": "Unsatisfied customer (dissatisfaction)",
+      "url": "https://app.notion.com/p/3e8c931f6ae58196b94de87d3d15c5e7",
+      "trigger": "Customer is unhappy or experienced an issue; we want to retain them with a goodwill gesture.",
+      "actions": ["Research in Stripe/Supabase/Vercel", "Create coupon"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for telling me, and I'm sorry InstaRadar didn't live up to your expectations here.\n\nI looked into your account: [concrete finding, e.g. your scans were delayed on [dates] because of [cause]]. [What is fixed now or what I did about it.]\n\nAs a thank you for sticking with us, I've applied [goodwill gesture, e.g. a free month of your plan] to your next billing period. No action needed on your side.\n\nIf anything else feels off, just reply here and I'll look into it personally.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "billing_question",
+      "name": "Billing question / disputed charge",
+      "url": "https://app.notion.com/p/3e8c931f6ae581c894b8dd9ef534d00f",
+      "trigger": "Customer questions a charge or thinks they were billed incorrectly (e.g. multiple charges, catch-up payments).",
+      "actions": ["Research in Stripe/Supabase/Vercel"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, I understand why that charge looked unexpected!\n\nI checked your account: the [amount] charge on [date] is [explanation, e.g. your monthly Premium renewal / catch-up payments for weeks where your card failed earlier]. [If it was an error on our side: That was a mistake, and I've refunded it. It shows up on your statement within 5 to 10 business days.]\n\nYou can see every payment with its date on your billing page: https://www.instaradar.app/portal/settings/billing\n\nLet me know if anything still doesn't add up, I'm happy to take another look!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "chargeback",
+      "name": "Chargeback / bank dispute",
+      "url": "https://app.notion.com/p/3e8c931f6ae5813c8558f2c0427a6037",
+      "trigger": "A bank or credit union contacts us about a disputed charge on the customer's behalf.",
+      "actions": ["Research in Stripe/Supabase/Vercel"],
+      "requiresConfirmation": false,
+      "reply": "Good afternoon,\n\nThank you for reaching out before a formal dispute. I have reviewed the account, and [conclusion, e.g. the charges are valid charges for an active subscription the customer started herself].\n\nThe account activity (screenshot attached) shows:\n- [date]: [event]\n- [date]: [event]\n- [dates]: [the disputed charges and amounts]\n\n[If applicable: The customer also contacted our support team during this period, which confirms active use.] The subscription is now [status], so no further charges will occur.\n\n[Decision, e.g. For these reasons, we are unable to issue a refund. / As a resolution, we have refunded the latest payment of [amount].] I'm glad to provide any further documentation you need.\n\nBest regards,\nAnastasia\nCustomer Care, InstaRadar"
+    },
+    {
+      "key": "charged_after_cancellation",
+      "name": "Charged after cancellation attempt",
+      "url": "https://app.notion.com/p/3e8c931f6ae5810cb4cdfe335562081b",
+      "trigger": "Customer says they were charged after cancelling, or a failed payment went through after the subscription was already inactive.",
+      "actions": [
+        "Research in Stripe/Supabase/Vercel",
+        "Stop failed-payment retries",
+        "Refund latest payment"
+      ],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, and sorry for the trouble!\n\nI looked into your account: [what happened, e.g. your first subscription was cancelled on [date], but a second subscription from [date] was still active / a failed payment from before your cancellation went through on [date]].\n\nI've stopped all further payment attempts, so you won't be charged again. I've also refunded your latest payment of [amount] from [date]. It shows up on your statement within 5 to 10 business days, depending on your bank.\n\nSorry again for the confusion, and let me know if anything still looks off!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "product_question",
+      "name": "Product question (general)",
+      "url": "https://app.notion.com/p/3e8c931f6ae58193a3cdd3f12050625a",
+      "trigger": "Customer asks how something works (private profiles, timestamps, scan frequency, chronological order, etc.).",
+      "actions": ["Search knowledge base"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, happy to help!\n\n[Direct answer in the first sentence, based on the matching knowledge base entry. Be concrete: name the profile, plan or feature.]\n\n[If the answer is a limitation, follow it with what they can do instead, e.g. start tracking the profile now so all new activity is recorded from today.]\n\nLet me know if anything else comes up, I'm always glad to help!\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "data_accuracy",
+      "name": "Data accuracy concern",
+      "url": "https://app.notion.com/p/3e8c931f6ae581f3b55be4fc0ebd1597",
+      "trigger": "Customer thinks the follower/following data or count is wrong; ask what and where before explaining.",
+      "actions": ["Search knowledge base"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, I'd like to get to the bottom of this!\n\nCould you tell me what exactly looked off and where you saw it? For example the follower count at the top, the follower list in a manual check, or an event in your activity timeline. A screenshot helps a lot.\n\n[If the customer already said it's about the count: add the matching knowledge base entry, e.g. Follower count fluctuation.]\n\nOnce I know, I'll check it right away and get back to you.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "safety_removal",
+      "name": "Safety / removal request",
+      "url": "https://app.notion.com/p/3e8c931f6ae581ba81e9ee845e3ed1d5",
+      "trigger": "Customer reports safety concerns, stalking, or threats and asks to be removed from the platform.",
+      "actions": ["Remove from tracking & viewing"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thank you for reaching out, and I'm truly sorry you're going through this. Your safety comes first.\n\nI've removed your profile [profile] from InstaRadar. It can no longer be tracked, searched or viewed anonymously through our platform, and I've deleted the data we had stored about it. You don't need to explain anything further.\n\nIf you notice anything that suggests otherwise, reply to this email and I'll look into it immediately. Please take care of yourself.\n\nBest wishes,\nAnastasia\nCustomer Care, InstaRadar"
+    },
+    {
+      "key": "outage_access",
+      "name": "Outage / access issue",
+      "url": "https://app.notion.com/p/3e8c931f6ae5810fa4f4e479c2f418de",
+      "trigger": "Customer can't load profiles or access their account due to a temporary technical issue.",
+      "actions": ["Search knowledge base", "Research in Stripe/Supabase/Vercel"],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, and sorry for the trouble!\n\nWe had a technical issue on [date] that stopped some profiles from loading. It's fixed now, and everything is working normally again.\n\nCould you give it another try? If it still doesn't load, log out and back in, or clear your browser cache. And if that doesn't help, just tell me which profile you're trying to check and I'll look into it right away.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    },
+    {
+      "key": "cannot_cancel",
+      "name": "Cannot cancel (missing button)",
+      "url": "https://app.notion.com/p/3e8c931f6ae5814c9db2cc7b24311637",
+      "trigger": "Customer can't find where to cancel and wants help ending their subscription.",
+      "actions": [
+        "Search knowledge base",
+        "Research in Stripe/Supabase/Vercel",
+        "Cancel at period end"
+      ],
+      "requiresConfirmation": false,
+      "reply": "Hi, thanks for reaching out, and sorry it wasn't easy to find!\n\nI've cancelled your subscription for you, so you won't be charged again. You keep full access to all [plan] features until [period end date].\n\nFor the future, you can manage your subscription anytime under Settings > Billing > Manage Billing: https://www.instaradar.app/portal/settings/billing\n\nIf you don't mind me asking, what made you decide to cancel? I read every answer, and it helps us improve.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+    }
+  ]
+}

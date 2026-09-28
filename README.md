@@ -1,1 +1,607 @@
 # Maelle
+
+Maelle is the AI business superbrain for running InstaRadar. The first area is **AnastasAI**, customer
+support: every email to support@instaradar.app becomes a ticket, an agent researches it read-only and
+prepares one decision (case, research, proposed actions, reply draft), Phillip approves with one key,
+deterministic code executes the actions and writes an audit log.
+
+Nothing happens without approval, and that is enforced by the system, not by the prompt: the agent
+has no write credentials, the executor is the only code that changes anything, and the UI never gets
+trusted by the server.
+
+## Stack
+
+Nuxt 4 (TypeScript strict, pnpm), Vercel, Supabase (Postgres, Auth, Realtime, Storage), Tailwind 4
+with the Maelle design tokens, primitives built on reka-ui (the layer under shadcn-vue, restyled so
+nothing looks like default shadcn), Claude API, Vitest, ESLint, Prettier.
+
+## Run it locally
+
+```bash
+pnpm install
+cp .env.example .env            # fill in what you have; everything is optional for the UI
+pnpm dev                        # http://localhost:3000
+```
+
+Without a Supabase project, set `AUTH_DISABLED=true` in `.env`: the UI then runs against the seed
+data served by the stubbed API routes (the design's sample tickets). `AUTH_DISABLED` is ignored in
+production builds and by the server middleware outside `nuxt dev`.
+
+With a Supabase project:
+
+```bash
+# .env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL, ALLOWED_USER_EMAIL
+pnpm db:migrate                 # applies supabase/migrations, allow-lists ALLOWED_USER_EMAIL
+pnpm db:seed                    # the design's sample data (idempotent)
+pnpm db:types                   # regenerates shared/types/database.ts
+pnpm db:reset -- --seed         # truncate + reseed (refuses non-local URLs without --force)
+```
+
+Auth is Supabase Auth with a single allowed user: only `ALLOWED_USER_EMAIL` can sign in (magic link
+or Google). Everything else is rejected by the server middleware, by RLS, and by a trigger on
+`auth.users` that refuses to create any other account. Enable the Google provider in the Supabase
+dashboard if you want the Google button to work.
+
+Checks:
+
+```bash
+pnpm typecheck                  # vue-tsc
+pnpm lint                       # eslint
+pnpm test                       # vitest: contracts, seed, shortcuts
+pnpm test:db                    # starts a local Postgres 16 (no Docker needed), applies shim +
+                                # migrations, seeds, runs tests/db (RLS, allow-list trigger, constraints)
+pnpm build                      # what Vercel runs
+```
+
+`pnpm test:db` needs the PostgreSQL server binaries (`initdb`, `pg_ctl`) or `TEST_DATABASE_URL`.
+The Supabase CLI (`pnpm exec supabase`) is installed; `supabase start` works when Docker is available.
+
+## Folder ownership
+
+Tickets 2 to 6 are built by separate coding agents in parallel. They meet only through the schema,
+the shared contracts and the service interfaces in `shared/`. Each folder has exactly one owner; changes
+to shared code are additive only (new fields, new tables, new migrations, never renames or removals).
+
+| Folder                                                                                                                                                                                                                                                                                                     | Owner                | What lives there                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shared/`                                                                                                                                                                                                                                                                                                  | IRDR-454 foundation  | `CaseType`, action registry, `Proposal` zod schema, status machine, service interfaces + stubs, API route types, seed data, generated DB types |
+| `app/components/ui/`, `app/components/shell/`, `app/layouts/`, `app/composables/useShortcuts.ts`, `useShell.ts`, `useCommands.ts`, `app/assets/`                                                                                                                                                           | IRDR-454             | Design system, app shell (rail · list · detail · context), shortcut registry, ⌘K palette shell, `/dev/components`, `/login`                    |
+| `supabase/migrations/20260927000000_foundation.sql`, `scripts/`, `server/middleware/`, `server/utils/`                                                                                                                                                                                                     | IRDR-454             | Schema, RLS, seed and migration scripts, auth middleware, service registry                                                                     |
+| `server/mail/`, `server/jobs/`, `server/api/cron/`, `server/api/webhooks/`, `docs/adr/001-jobs.md`                                                                                                                                                                                                         | IRDR-455 mail + jobs | Fetch, thread, send, job runner, recurring jobs, Linear webhook, health alerts                                                                 |
+| `server/agent/`, `server/api/agent/`, `server/api/tickets/[id]/rerun.post.ts`, `evals/`                                                                                                                                                                                                                    | IRDR-456 agent       | Claude tool-use loop, read-only tools, knowledge from Notion, policy guardrails, consistency check, eval fixtures                              |
+| `server/executor/`, `server/api/tickets/[id]/*.post.ts` (approve, reject, manual-send, snooze, unsnooze, retry, mark-done, case, undo)                                                                                                                                                                     | IRDR-457 executor    | Decision API, the 11 actions, idempotency, audit log                                                                                           |
+| `app/components/inbox/`, `app/components/ticket/`, `app/pages/anastasai/index.vue`, `app/pages/anastasai/t/[id].vue`, `server/api/tickets/index.get.ts`, `server/api/tickets/[id].get.ts`                                                                                                                  | IRDR-458 UI          | Inbox, ticket detail, decision bar, keyboard flow, Realtime                                                                                    |
+| `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`, `server/api/activity/`, `server/api/playbook.get.ts`, `server/api/learning/`, `app/components/autonomy/`, `app/components/activity/`, `app/components/playbook/`, `app/pages/anastasai/{autonomy,activity,playbook}.vue` | IRDR-459 autonomy    | Autonomy page, activity log, playbook, notifications, learning loop                                                                            |
+
+The foundation ships placeholder pages and seed-backed stub routes for every owner so the app runs
+end to end from day one. Stubbed responses carry an `x-maelle-stub: <owner>` header. Owners replace
+the stubs in place.
+
+### Service registry
+
+`server/utils/services.ts` starts with the stubs from `shared/services-stubs.ts`. Each owner registers
+its implementation from a Nitro plugin in its own folder:
+
+```ts
+// server/plugins/mail.ts (IRDR-455)
+export default defineNitroPlugin(() => registerService('mail', createMailService()))
+```
+
+Consumers only ever call `services.jobs.enqueue(...)`, `services.mail.sendReply(...)`,
+`services.agent.run(...)`, `services.executor.*`, `services.autonomy.evaluate(...)`,
+`services.notify(...)`. Job handlers for `agent_run`, `run_due_scheduled` and `daily_digest` are
+registered with `services.jobs.registerHandler(...)` by the agent, executor and autonomy tickets.
+
+### Database access from server code
+
+Server code reads and writes Maelle's database through `server/utils/db.ts` (`dbQuery`, `dbOne`,
+`withTransaction`, a `pg` pool on `SUPABASE_DB_URL`). The same SQL runs in `pnpm test:db` against the
+local Postgres, so every ticket can test its queries without a Supabase project. `useServiceDb()`
+(supabase-js with the service role) is for Storage and Auth admin calls. Routes fall back to the seed
+data when no database is configured (`isDbConfigured()`), so the UI keeps working offline.
+
+### Binding contracts (do not rename)
+
+- Table names in `supabase/migrations/20260927000000_foundation.sql`. Status-like columns are text
+  with CHECK constraints so a later migration can extend them.
+- `shared/status.ts` `transition(from, to)`: the only way to change a ticket status.
+- `shared/actions.ts`: the 11 actions, their zod param schemas, `irreversible`, `lockable`, order.
+  `refund_latest_payment`, `cancel_immediately`, `delete_account` are irreversible and locked by default.
+- `shared/case-types.ts`: 17 Notion template cases (labels are the exact Notion names, keys are
+  snake_case) plus `release_notification` and `unclear`.
+- `shared/proposal.ts` `ProposalSchema`: the agent's output contract, incl. registry order,
+  Send reply last, no em dash, irreversible actions wait for confirmation in stage 1.
+- `shared/api.ts`: route list with request and response types and the owner of each route.
+- Environment variable names in `.env.example`.
+
+## Design
+
+The design lives in the Claude Design project (AnastasAI Screens). The imported source files are kept
+under `docs/design/` (screens, design system bundle, styles). Tokens are in
+`app/assets/css/tokens.css` (verbatim from the design system) and mapped to Tailwind in
+`app/assets/css/main.css`. Fonts (Geist, Geist Mono, Instrument Serif) are self-hosted in
+`app/assets/fonts/` and tracked in git; `pnpm fonts:fetch` checks them against Google Fonts
+(`SHA256SUMS`) and `pnpm fonts:fetch --update` takes upstream changes. `/dev/components` shows
+every shared component in every state.
+
+Dark only. No icon set: locks, checkboxes and dots are CSS shapes. The proposal is the only lit
+surface on a screen (`<Panel elevation="focus">`).
+
+## Credentials and permissions
+
+Every integration uses the narrowest key that can do its job. Names are in `.env.example`.
+
+| Variable                  | Used by         | Permissions                                                                                           |
+| ------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `STRIPE_READ_KEY`         | agent           | restricted key, read on everything, no writes                                                         |
+| `STRIPE_WRITE_KEY`        | executor        | restricted key, write on Subscriptions, Refunds, Coupons, Promotion codes, Invoices; read on the rest |
+| `INSTARADAR_DB_READ_URL`  | agent           | Postgres role with SELECT only and a statement timeout                                                |
+| `INSTARADAR_DB_WRITE_URL` | executor        | Postgres role limited to the executor's writes (blocklist, deletion)                                  |
+| `NOTION_READ_TOKEN`       | agent, playbook | integration with read content only                                                                    |
+| `NOTION_WRITE_TOKEN`      | learning loop   | integration with read + insert content, no update or delete                                           |
+| `LINEAR_READ_API_KEY`     | agent           | read                                                                                                  |
+| `LINEAR_WRITE_API_KEY`    | executor        | create issues, create comments                                                                        |
+| `VERCEL_API_TOKEN`        | agent           | read runtime logs of the InstaRadar project                                                           |
+| `CRON_SECRET`             | cron routes     | bearer token the scheduler presents                                                                   |
+| `ANTHROPIC_API_KEY`       | agent           | Claude API                                                                                            |
+
+## Deployment
+
+Vercel picks up the Nuxt build automatically (`pnpm build`). Set the variables from `.env.example`
+in the Vercel project (preview and production). Cron schedules are added by the mail/jobs ticket
+(`vercel.json` or Supabase cron, see `docs/adr/001-jobs.md`).
+
+## IRDR-459: Autonomy, activity log, playbook, notifications, learning loop
+
+Owner folders: `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`,
+`server/api/activity/`, `server/api/playbook.get.ts`, `server/api/learning/`, `server/plugins/autonomy.ts`,
+`app/components/{autonomy,activity,playbook}/`, the three pages, `tests/autonomy/`, `tests/db/autonomy/`.
+Migration `supabase/migrations/20260927010459_autonomy.sql` adds `settings_audit`, `notifications` and
+`learning_events` (RLS, allow-list policy). Shared additions: `shared/autonomy.ts` (rules, zod schema
+for PUT, audit summaries), `shared/activity.ts` (parameter and result formatting), optional fields merged
+into `ActivityResponse`, `AutonomyResponse`, `PlaybookResponse` and `LearningResponse`.
+
+### Autonomy page (`/anastasai/autonomy`, screen 1h)
+
+- `GET /api/autonomy`: track record per template case type from the last 30 decisions
+  (`decisions` joined with `tickets.case_type`; snoozed and marked_done are not verdicts), undo counts
+  (Auto executions cancelled inside the undo window since the case went on Auto), settings, modes,
+  effective locks. Recommendation rules, in order: on Auto (`On Auto since <date> · N undos`),
+  irreversible actions, any rejection, fewer than 15 tickets (`Collecting · N more tickets`), at least
+  90% unchanged (`Ready for Auto`), otherwise too many edits. Case types with fewer than 5 tickets
+  collapse into one row. Without a database the seed answers (header `x-maelle-stub`).
+- `PUT /api/autonomy` (`AutonomyUpdateRequest`, validated with `AutonomyUpdateSchema`): modes, locks and
+  settings in one transaction, one `settings_audit` row per real change (who = session email, what,
+  from, to). 503 without a database. Pause all is `settings.global_pause`; the rail note follows it.
+- Locks: Refund latest payment, Cancel immediately and Delete account are locked by default
+  (`ACTIONS[type].lockedByDefault` when no `action_locks` row exists).
+
+### Auto path
+
+`services.autonomy.evaluate(ticketId)` returns `'auto'` only when the case is on Auto, global pause
+is off, neither the ticket nor the proposal is high risk or safety, the case is not unclear, the
+proposal has no policy warnings, no customer confirmation is pending (stage 1), and no enabled action
+is locked. Otherwise `'ask'`. The agent calls `services.executor.runAuto(ticketId)` on `'auto'`;
+evaluate never executes anything. A safety or high-risk ticket triggers `notify('high_risk_ticket')`
+once per ticket (deduped in `notifications`) on its way to `'ask'`. `evaluateDetailed()` exposes the
+reason for logs and tests.
+
+### Activity log (`/anastasai/activity`, screen 2c)
+
+`GET /api/activity`: `action_executions` joined with tickets, filters `by=you|auto`,
+`irreversibleOnly=true`, `from`, `to`, cursor pagination (`created_at desc, id desc`, `nextCursor`),
+plus `settings` (the `settings_audit` rows of the same time range, shown as "Settings" entries).
+`GET /api/activity/export.csv` takes the same filters and exports every matching row.
+
+### Playbook (`/anastasai/playbook`)
+
+Read-only links into Notion: protocol sections, the 17 templates with actions and "Confirm first",
+Examples and Knowledge Base counts (live through `NOTION_READ_TOKEN`, cached five minutes; snapshot
+counts otherwise, `liveCounts` says which).
+
+### Notifications
+
+`services.notify(kind, payload)` sends plain-text mail to `settings.notify_email`, else
+`NOTIFY_EMAIL`, through `services.mail.sendSystemEmail`, and logs every attempt in `notifications`
+(`pending`, `sent`, `failed`, `skipped`). `high_risk_ticket` is deduped per ticket, `daily_digest`
+per local day (`digest:YYYY-MM-DD` in the settings timezone), `system_alert` always sends. The
+`daily_digest` job handler is registered in `server/plugins/autonomy.ts`; the digest covers
+everything since the last sent digest: handled automatically, needs a decision, waiting, failed actions.
+
+### Learning loop
+
+- Notion writes go through `NotionWriter` (`server/learning/notion-writer.ts`): the real adapter uses
+  `NOTION_WRITE_TOKEN` (insert only), the in-memory fake serves tests and every environment without
+  the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, `AGENT_SMALL_MODEL`, default
+  `claude-sonnet-5`) with a deterministic fallback (first sentences of the reply).
+- `POST /api/learning/example { ticketId }`: Draft page in the Examples DB (Name, Category, Customer
+  message, Response, Status Draft). `POST /api/learning/kb-draft { ticketId }`: Draft page in the
+  Knowledge Base (Name, Category, Type, Customer phrasing, Short answer, App InstaRadar, Status Draft,
+  Related templates). Both return `{ notionPageId, url }`, are idempotent per ticket
+  (`learning_events`), and need the ticket from the database (503 offline).
+- The Examples data source got a `Status` select (Active, Draft) on 2026-09-27; the existing 10
+  examples are Active. New examples arrive as Draft and are only used once Phillip sets them to Active.
+
+## IRDR-457 · Executor: decision API, the 11 actions, idempotency, audit log
+
+The executor (`server/executor/`) is the only code that changes anything: Stripe, InstaRadar data,
+Linear, outgoing email, ticket state. The UI and Auto mode call the same decision API
+(`server/api/tickets/[id]/*.post.ts`); the server never trusts the UI. `server/plugins/executor.ts`
+registers it as `services.executor` and registers the `run_due_scheduled` job handler.
+
+### Flow
+
+1. **Decide** (one transaction, ticket row locked): status must allow the step (`transition()` from
+   `shared/status.ts`), the proposal version must match, every action must be in the registry with
+   valid params (shared zod schemas), an enabled irreversible `now` action needs
+   `confirmIrreversible: true` (otherwise HTTP 409 with `{ error: 'confirm_required', irreversible }`).
+   The `decisions` row is written (`approved` / `approved_with_edits` with `reply_diff` and
+   `action_changes`, `time_to_decide_ms`), the `action_executions` rows are inserted-or-fetched by
+   idempotency key, the ticket moves to `executing`.
+2. **Run** (outside the transaction, one UPDATE per status change so Realtime shows progress): actions
+   in registry order, Send reply last. A failure never stops an independent action. The reply is
+   `held` only while an action with `required_for_reply` has not succeeded; otherwise it still sends.
+   Auto runs schedule the reply (`scheduled`, `scheduled_for = now + undo window`) instead of sending.
+3. **Finish** (one transaction): `closed` (resolution `approved`, `approved_with_edits`, `auto`,
+   `handled_manually`, `rejected`, `closed_no_reply`), `action_failed` (any failure), `waiting_on_customer`
+   (stage 1 with queued `after_confirmation` actions; `waiting_for` = "Waiting for “Yes, refund”") or
+   `auto_pending` (Auto, until `runDueScheduled` sends the reply or `undo` cancels it).
+
+### Idempotency and retries
+
+- Base key `executionIdempotencyKey(ticketId, proposalVersion, position)`; manual sends use
+  `<ticketId>:m<decisionId>:p<position>`. `action_executions.idempotency_key` is unique.
+- A retry writes a **new row** with `attempt + 1` and the suffix `:a<attempt>` (as the seed shows for
+  #4812); the failed row stays for the audit trail. Held rows are reused. Every external call uses
+  the **base** key, so Stripe replays the first refund or cancellation, Linear is searched for the
+  marker `Maelle ticket #<n>` before creating an issue or comment, and mail gets the same
+  `idempotencyKey`. Refunds also carry `metadata.maelle_key`, so a retry after a lost response finds
+  its own refund instead of creating a second one.
+- Double submits of approve or retry are refused with 409: the second request finds the ticket no
+  longer waiting (row lock + status machine).
+- The UI should group executions by position (`idempotency_key` without the `:a<n>` suffix) and show
+  the highest attempt.
+
+### Errors for the UI
+
+Plain words, then provider detail, then what did not happen, then the request id:
+`Stripe: rate_limit (429) · nothing was charged or refunded · req_Qx91Lm`. Precondition failures read
+`Not the latest payment: ch_… from Sep 20 is newer · nothing was charged or refunded`. Never an em dash.
+
+### External systems
+
+Each system sits behind an interface with a real adapter and an in-memory fake
+(`server/executor/clients/`). A real adapter is constructed only when its credential is set. Without
+one, `nuxt dev` and tests use the fakes; production gets a client whose calls fail with
+`<Provider>: not_configured` so nothing is ever pretended. `EXECUTOR_USE_FAKES` overrides this.
+
+| Variable                                                          | Used for                                                    | Permissions the key or role needs                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STRIPE_WRITE_KEY`                                                | cancel, refund, stop retries, coupons, cancellation details | Restricted key. **Write**: Subscriptions (`subscriptions.update`, `subscriptions.cancel`), Refunds (`refunds.create`), Coupons (`coupons.create`), Promotion codes (`promotion_codes.create`), Invoices (`invoices.update`, `invoices.mark_uncollectible`). **Read**: Customers, Charges, Payment intents, Refunds, Invoices, Subscriptions. Nothing else. Every write carries an `Idempotency-Key`. Test mode key while there is no production sign-off. |
+| `INSTARADAR_DB_WRITE_URL`                                         | remove from tracking, delete account                        | Postgres role `maelle_executor` (see `docs/instaradar/executor-role.sql`): `USAGE` on the schema, `SELECT, INSERT` on `blocked_profiles`, `SELECT, DELETE` on the tracked-profiles table and on each table in `INSTARADAR_USER_TABLES`; `statement_timeout 20s`; no other grants.                                                                                                                                                                         |
+| `INSTARADAR_SUPABASE_URL`, `INSTARADAR_SUPABASE_SERVICE_ROLE_KEY` | delete the InstaRadar auth user                             | The InstaRadar project's service role key (Auth admin `getUserById`, `deleteUser`). Not Maelle's own project. Alternative in `docs/instaradar/README.md` section 5.                                                                                                                                                                                                                                                                                       |
+| `LINEAR_WRITE_API_KEY`, `LINEAR_TEAM_ID` or `LINEAR_TEAM_NAME`    | create issues, link existing ones                           | Personal or OAuth key with **Create issues** and **Create comments** (plus read to find the team, labels `Bug`/`Feature`, and the marker). Team InstaRadar.                                                                                                                                                                                                                                                                                               |
+| `SUPABASE_DB_URL`                                                 | Maelle's own tables                                         | The pooler URL; the executor writes `action_executions`, `decisions`, `release_notifications`, `cancellation_reasons`, `tickets`, `proposals.status`.                                                                                                                                                                                                                                                                                                     |
+
+Mail goes through `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })` (IRDR-455).
+
+### Actions and their live checks
+
+`cancel_at_period_end` (returns the access end date; already scheduled or cancelled is reported, not
+failed) · `cancel_immediately` (InstaRadar deletes the tracked profiles through its
+`customer.subscription.deleted` webhook, assumption A1 in `docs/instaradar/README.md`) ·
+`refund_latest_payment` (latest succeeded charge of the customer only, not already refunded, amount ≤
+payment, daily count and amount limits from `settings`, in `settings.timezone`) · `delete_account`
+(no active subscription, explicit customer confirmation: stage 2, confirmation found in the thread,
+or the approver's note says "confirmed"; email must match the auth user) · `stop_failed_payment_retries`
+(cancelled or inactive subscriptions only; open invoices are marked uncollectible, falling back to
+`auto_advance: false`) · `create_coupon` (applied to the subscription or a one-use promotion code
+`IR-XXXXXX` for the reply) · `create_linear_ticket` (label Bug/Feature, description ends with
+"Customer to notify once released: <email>" and the marker; an existing issue gets one comment with
+the same line) · `store_release_notification_email` · `store_cancellation_reason` (Maelle row plus
+Stripe `cancellation_details` while the subscription is not cancelled) · `remove_from_tracking`
+(InstaRadar blocklist plus tracking rows removed) · `send_reply`.
+
+### Auto
+
+`executor.runAuto(ticketId)` refuses when the global pause is on, the ticket or proposal risk is
+`high` or `safety`, the case is `unclear`, the proposal has policy warnings, a customer confirmation
+is pending, the proposal has no reply, or any enabled action is locked (`action_locks`, or
+`lockedByDefault` without a row). Otherwise it approves as `auto`: actions run now, the reply is
+scheduled after `settings.undo_window_minutes`, the ticket is `auto_pending`. `runDueScheduled()`
+(job `run_due_scheduled`) sends due replies and closes the tickets (resolution `auto`); a failed send
+returns the ticket to `needs_decision` with the proposal active. `undo` cancels the scheduled reply,
+returns the ticket to `needs_decision` and lists what already ran (also stored on the cancelled row).
+
+### Tests
+
+```bash
+pnpm test                                        # tests/autonomy: rules, evaluate guards, notify, activity, learning
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr459 pnpm test:db
+```
+
+## IRDR-458: inbox, ticket detail, decision bar and keyboard flow
+
+The AnastasAI screens from the design (1b to 1f, 3a and 3b), built from the shared components.
+
+- `app/pages/anastasai/index.vue` is the inbox: the lit "Needs decision" table (safety, then high
+  risk, then the oldest first), parked rows (Waiting on customer, Snoozed, collapsed with Show),
+  "Handled automatically" with Undo (only when tickets sit in the undo window), and the closed
+  history with All / Approved / Edited / Rejected / Manual / Auto, F for case and date range, day
+  groups and infinite scroll. `?preview=cleared` renders the cleared state (3b) in `nuxt dev`.
+- `app/pages/anastasai/t/[id].vue` is the ticket: rail · list · detail · customer context. The
+  proposal is the only lit surface; actions are a checklist with editable parameters and "+ Add
+  action" from the registry; the reply draft has an editor (E, ⌘⏎ approves) and a check line; the
+  research shows evidence tables and log lines on demand; the decision bar has the normal, confirm
+  (ember, "Press A again") and failed modes plus the parked, researching, unclear, manual, auto
+  and closed variants. A closed row opens read only (outcome, sent reply, audit trail).
+- Components live in `app/components/inbox/` and `app/components/ticket/`; the view models and
+  the decision state machine in `app/composables/useInboxRows.ts`, `useInboxFilters.ts`,
+  `useTicketModel.ts`, `useTicketParams.ts`, `useTicketDecision.ts` (pure factory plus the Nuxt
+  wrapper), data access in `useTickets.ts`, Realtime in `useRealtime.ts`.
+- `GET /api/tickets` and `GET /api/tickets/:id` read the database when `SUPABASE_DB_URL` (or
+  `TEST_DATABASE_URL`) is set, through `shared/ticket-repository.ts`, which feeds the DB rows to the
+  same seed views the offline stub uses, so both modes agree. Without a database they answer from
+  the seed. List semantics: no `status` returns every ticket, open first, then closed by
+  `closed_at desc` (the palette search covers everything); `status=closed` is the paginated
+  history (`cursor`, `nextCursor`, `closed_at desc, id desc`); `status=a,b` filters; `q`,
+  `caseType`, `resolution`, `from`, `to`, `limit` as in `TicketListQuery`.
+- Keyboard: J/K, ⏎ open (inbox) or retry (failed ticket), A approve (twice for irreversible
+  actions), E edit, ⌘⏎ approve from the editor, Esc back or cancel, R reject (1 to 4 pick the
+  reason), S snooze or unsnooze (1 to 3 pick a preset), M mark as done, F filters, ? shortcuts,
+  ⌘K commands (approve, edit, reject, snooze, change case, re-run research, retry, mark done,
+  unsnooze, undo, focus mode, context panel). Focus follows the selection so it is always visible.
+- Decision API errors: 409 `confirm_required` enters confirm mode, 409 stale reloads the ticket,
+  422 warns (safety), 501 says "Not available yet", network errors say so in plain words. After an
+  approval with edits or a manual send the toast offers "Save as example?", after a proposal with
+  `noKnowledgeFound` it offers "Create KB draft" (learning endpoints, IRDR-459).
+- Realtime (`useRealtime`) subscribes to `tickets`, `agent_runs` and `action_executions` only when
+  `runtimeConfig.public.supabase.url` is a real https URL; with the local placeholder it is a no-op.
+- Tests: `tests/ui/` (view models, filters, params, the decision state machine and the keyboard
+  flow under happy-dom) run with `pnpm test`; `tests/db/tickets/` run the list and detail queries
+  against the seeded local Postgres with
+  `TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr458 pnpm test:db`.
+
+pnpm test # tests/executor: every action against the fakes, planner, errors, clients
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr457 pnpm test:db
+
+```
+
+`tests/db/executor/` clones the seeded test database into its own database per file (so the
+foundation's schema assertions never race with these mutations) and runs the flows on the design's
+tickets: #4824 routine approve, #4809 confirm + irreversible, #4822 stage 1, #4820 retry of a failed
+required action, plus edits, partial failures, reject, manual send, snooze, mark done, case override,
+Auto refusals, Auto run, undo, due scheduled sends and the refund limits.
+```
+
+## IRDR-456 · AnastasAI agent run
+
+`server/agent/` turns one ticket into one validated proposal: case, research with sources, actions
+from the registry, reply draft. The agent reads everything and writes nothing outside Maelle's own
+tables; that is enforced by construction, not by the prompt. `tests/agent/credentials.test.ts`
+proves the module tree never references a write credential name and never imports the executor, and
+that the agent's config accessor (`server/agent/config.ts`, the only place that reads the
+environment) exposes read keys only.
+
+### How a run works
+
+`services.agent.run(ticketId, trigger)` (registered from `server/plugins/agent.ts`, which also
+registers the `agent_run` job handler):
+
+1. `beginRun` creates the `agent_runs` row (or reuses the row of the same job id: retried jobs bump
+   `attempt`, a finished job is not run twice). Status: `new` or `needs_decision` → `researching`
+   through `transition()`; `waiting_on_customer`, `snoozed` and `closed` are accepted too when the
+   mail ticket did not move the ticket yet.
+2. **Deterministic pre-research** (`research.ts`) fetches Stripe, the InstaRadar database, the
+   Vercel logs, Linear and the email history in parallel, each with its own timeout, and writes
+   `agent_runs.progress` after every source settles (`stripe ✓ supabase ✓ vercel ⋯ kb ✓`). A source
+   without credentials is `skipped`, a failing one `failed`, both with a research warning; neither
+   blocks the proposal. The Stripe customer is found through the ticket email, then through emails
+   and names mentioned in the message (a bank writes about its member).
+3. `context.ts` derives the customer facts and the context panel snapshot (plan, status, renewal or
+   cancellation date, customer since, card, payments and refunds timeline, tracked profiles, previous
+   tickets, log errors with counts, tags such as Long-term, New customer, Refund used, Resubscribed,
+   Business plan) in code.
+4. **Claude tool-use loop** (`loop.ts`, `prompt.ts`, `tools/definitions.ts`): system prompt from the
+   Notion protocol, the 17 templates, the examples, the knowledge base and the action registry
+   (cached with `cache_control`); user message with the thread, the research bundle, the facts and
+   hints. Read-only tools: `stripe_events`, `stripe_search_customers`, `stripe_retrieve`,
+   `instaradar_select` (one guarded SELECT), `instaradar_profile`, `vercel_logs`, `linear_search`,
+   `notion_page`, `email_history`. Output only through `submit_proposal`.
+5. `finalize.ts` owns what must not depend on the model: the confirmation stage
+   (`customerConfirmationNeeded` follows the template plus the detected answer in the thread),
+   the risk floor (safety for removal requests, high for chargebacks, open disputes, legal threats
+   and long-term customers with an issue), the due date extracted from the message, the recipient,
+   the template reference, `noKnowledgeFound`, the research warnings, the policy warnings
+   (`policy.ts`: refund outside 30 days, refund of an older payment, second refund, deletion without
+   cancellation or confirmation, cancel request proposed as immediate, vague reason without an
+   ask-first reply) and, for chargebacks, the Stripe timeline attachment. Then `ProposalSchema`
+   validates. Issues go back to the model; after three rejected submissions the run is `failed`, the
+   ticket shows `needs_decision` with the error on `agent_runs.error` and a re-run option.
+6. Write path (`store/db.ts`, one transaction): supersede the active proposal, insert the new
+   version with its actions, set the ticket fields (case, confidence, risk, due date, stage, customer
+   ids, context, tags, waiting_for), `researching → needs_decision`, translations of non-English
+   messages into `messages.translation`. Then `autonomy.evaluate(ticketId)` and, on `auto`,
+   `executor.runAuto(ticketId)`.
+
+Triggers: `new_ticket`, `customer_reply` (detects "Yes, refund" or a change of mind, stage 2),
+`case_override` (the case on the ticket is enforced), `rerun`, `follow_up`, `release_notification`
+(drafts the "it's live" email from the Linear issue in `release_notifications` and the original
+thread; drafted from the protocol until a "Release notification" template exists in Notion).
+
+### Knowledge
+
+`knowledge/loader.ts` reads Notion at runtime with `NOTION_READ_TOKEN` (`@notionhq/client`, data
+sources `dataSources.query`, page bodies `blocks.children.list`), caches for `KNOWLEDGE_CACHE_TTL_MS`
+(5 minutes) per process and falls back to the `docs/notion` snapshot (JSON imports plus
+`knowledge/protocol-snapshot.ts`, kept identical to `customer-support.md` by a test) when the token
+is missing or Notion fails. Examples: only `Status = Active` rows once the property exists. Knowledge
+base: `Status = Active` and `App = InstaRadar`; Draft and Outdated entries are never loaded. The KB
+is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it is filled.
+
+### Read-only tools and credentials
+
+| Source              | Adapter                                                                                                                                                                                                                             | Credential                                                           |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Stripe              | `tools/stripe.ts`, `stripe` SDK, reads only (customers, subscriptions, invoices, charges, refunds, disputes, events, search)                                                                                                        | `STRIPE_READ_KEY`                                                    |
+| InstaRadar database | `tools/instaradar.ts`, `pg` pool with `default_transaction_read_only=on` and `statement_timeout=8000`; whitelisted queries plus `guardSelect()` (single SELECT, no semicolons or comments, forbidden keywords, LIMIT forced to 200) | `INSTARADAR_DB_READ_URL`                                             |
+| Vercel logs         | `tools/vercel.ts`, see below                                                                                                                                                                                                        | `VERCEL_API_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_INSTARADAR_PROJECT_ID` |
+| Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_READ_API_KEY`, `LINEAR_TEAM_ID`                              |
+| Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_READ_TOKEN`                                                  |
+| Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                                 |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `AGENT_MODEL` default `claude-fable-5-1`, consistency check `AGENT_SMALL_MODEL` default `claude-sonnet-5`                                                             | `ANTHROPIC_API_KEY`                                                  |
+
+Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
+Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by
+`createFakeTools()`.
+
+**InstaRadar table names** are assumptions (the InstaRadar repository was not reachable):
+`public.profiles`, `public.tracked_profiles`, `public.scans`, `public.alerts`,
+`auth.audit_log_entries`, `public.blocked_profiles` with the columns listed in
+`DEFAULT_INSTARADAR_TABLES` (`server/agent/config.ts`). Override any of them with the
+`INSTARADAR_TABLES` JSON.
+
+**Vercel logs.** `VERCEL_LOGS_SOURCE=api` (default) reads the Runtime Logs endpoint
+`GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?teamId=…`
+(NDJSON, one entry per line; the production deployment id comes from
+`GET /v6/deployments?projectId=…&target=production&limit=1`) and filters by time, text, user id and
+profile handle. The endpoint is built for tailing and only returns a recent window. When that is not
+enough, set up a Vercel **log drain** (JSON format) that posts into the `vercel_logs` table added by
+`supabase/migrations/20260927010456_agent.sql` and set `VERCEL_LOGS_SOURCE=drain`; the agent then
+queries the table with plain SQL (`createLogDrainLogsClient`). The ingest route for the drain
+(`POST /api/webhooks/vercel-logs`, verifying `x-vercel-signature`) belongs to the webhooks folder of
+IRDR-455 and is requested from there.
+
+**Chargeback evidence.** `attachments/stripe-timeline.ts` renders the Stripe activity timeline
+deterministically as SVG (same input, same bytes) and stores it through `AttachmentStore`
+(Supabase Storage bucket `attachments` in production, memory otherwise); the reply draft carries it
+as `attachments[]` and the executor sends it from `storagePath`. No pure-JS SVG→PNG converter without
+native dependencies is installed, so the attachment is the SVG itself; add one (or a headless
+renderer) to attach a PNG.
+
+### Consistency check
+
+`POST /api/agent/consistency-check` (`server/agent/consistency.ts`) compares the reply text with the
+enabled actions: deterministic rules (refund, cancellation, coupon, release notice, Linear ticket,
+removal, deletion, retries, amounts, period-end wording, em dash) always run; with
+`ANTHROPIC_API_KEY` the small model adds judgement and the results are merged.
+
+### Evals and tests
+
+```bash
+pnpm eval                       # evals/plumbing.eval.ts: the 7 test cases + the 10 Notion examples with the
+                                # ScriptedModelClient and fake tools (runs in CI). evals/live.eval.ts runs the
+                                # same fixtures with the real model when ANTHROPIC_API_KEY is set, else skipped.
+LIVE_EVAL_ONLY=case-3 ANTHROPIC_API_KEY=… pnpm eval   # one live fixture
+pnpm test                       # tests/agent/**: credentials, knowledge, tools, two-stage, policy, context,
+                                # consistency, timeline, run behaviour (retries, failure path, partial failure)
+TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:54329/postgres TEST_DB_NAME=maelle_irdr456 pnpm test:db
+                                # tests/db/agent/**: write path, versions, failure path, two-stage across two runs,
+                                # job idempotency, translations, the agent migration
+```
+
+The eval checks case, risk, action set, stage, `requiredForReply`, confirmation stage, due date,
+attachment, linked Linear issue, knowledge refs and the no-em-dash rule (`evals/harness.ts`,
+`checkExpectations`). Fixtures live in `evals/fixtures/` and are shared with the unit tests.
+
+### Dev server
+
+`AUTH_DISABLED=true pnpm dev` without a database: `POST /api/tickets/:id/rerun` enqueues the job
+and, while the jobs service is still the stub, runs the agent inline; the run then fails fast with
+"Database is not configured" because the agent writes to Maelle's tables. With `SUPABASE_DB_URL`
+and `ANTHROPIC_API_KEY` set, the run is real; sources without credentials are skipped with a warning.
+
+## Mail and jobs (IRDR-455)
+
+Every mail to support@instaradar.app becomes a ticket, every reply goes out exactly once, and one
+job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`.
+
+### How it runs
+
+- `POST|GET /api/cron/tick` every minute (Vercel Cron, `vercel.json`): evaluates the recurring
+  schedule from `job_heartbeats`, runs due jobs from the `jobs` table within `JOBS_TICK_BUDGET_MS`,
+  checks health, prunes old history once a day.
+- `POST|GET /api/cron/fetch-mail` every minute: the `fetch_mail` lane, so a long agent run never
+  delays inbound mail.
+- `POST /api/webhooks/linear`: a completed issue of the InstaRadar team creates one
+  `release_notification` ticket per stored customer email and enqueues the agent.
+- Handlers: `services.jobs.registerHandler(type, handler)`. This ticket registers `fetch_mail`,
+  `wake_snoozed`, `waiting_follow_up` and `send_system_email`; the agent registers `agent_run`, the
+  executor `run_due_scheduled`, autonomy `daily_digest`. A job without a handler waits and is
+  retried a minute later (logged, never dropped).
+- Enqueue: `services.jobs.enqueue(type, payload, runAt?)`. Inbound mail, the timers and the webhook
+  enqueue `agent_run` with a dedupe key, so the same event never produces two runs.
+- Sending: `services.mail.sendReply(ticketId, draft, { sentBy, idempotencyKey })`. Pass the
+  execution id as `idempotencyKey`; a retry returns the stored result without sending. The reply
+  carries `In-Reply-To`/`References` of the latest customer mail, the thread's subject with `Re:`,
+  plain text plus simple HTML, and attachments from Storage. `services.mail.sendSystemEmail(to,
+subject, body)` goes to `NOTIFY_EMAIL` when `to` is empty.
+- Follow-ups: `shared/follow-up.ts` `followUpKindDue()` decides between `follow_up` (after
+  `settings.follow_up_days`) and `auto_close` (after `settings.auto_close_days`), counted from our
+  first reply after the customer's last message. The agent can read the latest
+  `ticket_follow_ups` row of a ticket to see which one a `follow_up` run is for.
+- Tables added: `jobs`, `job_runs`, `job_heartbeats`, `mail_cursors`, `mail_sends`, `mail_ignored`,
+  `ticket_follow_ups`; columns `messages.text_stripped`, `messages.provider_thread_id`,
+  `messages.headers`.
+
+### Which mail provider
+
+The mailbox host decides the adapter. Run `dig MX instaradar.app` (or `nslookup -type=MX
+instaradar.app`):
+
+- MX records pointing to `*.google.com` / `*.googlemail.com`: Google Workspace. Use
+  `MAIL_PROVIDER=gmail` with either an OAuth client of the mailbox (Google Cloud project, Gmail API
+  enabled, OAuth client "Desktop app", one-time consent with scope
+  `https://www.googleapis.com/auth/gmail.modify` to obtain `GMAIL_OAUTH_REFRESH_TOKEN`), or a
+  service account with domain-wide delegation for that scope (`GMAIL_SERVICE_ACCOUNT_JSON`,
+  `GMAIL_IMPERSONATE_USER=support@instaradar.app`). The cursor is the mailbox history id; replies
+  are sent through the API into the same thread and land in Sent automatically.
+- Anything else (Zoho, Fastmail, Namecheap, Hetzner, ...): `MAIL_PROVIDER=imap` with
+  `IMAP_HOST/IMAP_PORT/IMAP_USER/IMAP_PASSWORD` and `SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASSWORD`
+  (usually the same login; use an app password when 2FA is on). The cursor is the INBOX UID; sent
+  mail is appended to the Sent folder (`IMAP_SENT_FOLDER` if it cannot be detected).
+- No credentials: the in-memory fake, which is also what the tests use. For a local end-to-end
+  run set `MAIL_FAKE_DIR=.data/mail` and drop `.eml` files there (names sort chronologically, e.g.
+  `2026-09-27T10-00-mail.eml`); sent mail is written to `.data/mail/sent`.
+
+Inbound rules: dedupe by `Message-ID` (and provider id); auto-replies (`Auto-Submitted` other than
+`no`, `Precedence: auto_reply`, `X-Autoreply`, out-of-office subjects), bounces (mailer-daemon,
+delivery-status reports, empty `Return-Path`), bulk mail (`Precedence: bulk|junk|list`, list
+headers) and our own mail never become tickets (see `mail_ignored`). Threading: `In-Reply-To` /
+`References`, then the provider thread id, then same sender + same normalised subject within 30
+days. A customer reply moves `waiting_on_customer`, `closed`, `snoozed` and `needs_decision` to
+`researching` and enqueues a `customer_reply` run; a reply on a `new` ticket is attached to the
+queued run; other statuses attach and enqueue a run without changing the status.
+
+### Linear webhook
+
+Linear → Settings → API → Webhooks → new webhook with URL `https://<maelle>/api/webhooks/linear`,
+resource "Issues", team InstaRadar. Put the signing secret into `LINEAR_WEBHOOK_SECRET` and the
+team into `LINEAR_TEAM_ID` (or `LINEAR_TEAM_KEY`, default `IRDR`). The signature is HMAC-SHA256 of
+the raw body; deliveries older than five minutes are rejected; retries are idempotent.
+
+### Deploying the crons
+
+`vercel.json` schedules both routes every minute. Set `CRON_SECRET` in the Vercel project (Vercel
+sends it as `Authorization: Bearer ...`). Per-minute crons need the Pro plan (Hobby allows daily
+crons only) and the cron function needs a max duration of 300 s: `nuxt.config.ts` sets
+`nitro.vercel.functions.maxDuration = 300` (raise it on Pro if a tick regularly runs out of budget,
+and keep `JOBS_TICK_BUDGET_MS` below it). If Vercel Cron is not an option, Supabase `pg_cron` + `pg_net` can
+call the same URLs; the SQL is in the ADR.
+
+### Trying it locally
+
+```bash
+AUTH_DISABLED=true CRON_SECRET=dev SUPABASE_DB_URL=postgresql://postgres@127.0.0.1:54329/maelle_irdr455 pnpm dev --port 3001
+curl -s -X POST -H 'Authorization: Bearer dev' localhost:3001/api/cron/fetch-mail | jq
+curl -s -X POST -H 'Authorization: Bearer dev' localhost:3001/api/cron/tick | jq
+```
+
+Tests: `pnpm test` covers parsing (multipart, HTML only, forwarded, non-English, auto-reply, bounce,
+attachment), classification, quote stripping, threading, MIME composition, provider selection,
+schedule slots, backoff and the webhook signature. `TEST_DATABASE_URL=... TEST_DB_NAME=maelle_irdr455
+pnpm test:db` covers the pipeline end to end on a real Postgres: ingest and dedupe, threading and
+status transitions, ignored mail, attachments, a crash mid-ingest, exactly-once sends (retry,
+send-then-crash, stale lock takeover, concurrency), enqueue/claim/retry/dead-letter, expired locks,
+per-ticket serialisation, the recurring schedule, snooze wake-up, follow-up timers, health alerts,
+the Linear webhook and both cron lanes.
