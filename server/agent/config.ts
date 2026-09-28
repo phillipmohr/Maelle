@@ -1,9 +1,8 @@
 /**
  * Runtime configuration of the agent. This is the ONLY place in `server/agent` that reads
- * environment variables, and it exposes read credentials only. The write credentials (the Stripe
- * write key, the InstaRadar write URL, the Linear write key, the Notion write token) never appear
- * here, so the agent code path cannot obtain them even by accident;
- * `tests/agent/credentials.test.ts` proves it.
+ * environment variables. The agent is read-only by construction: its Stripe, InstaRadar, Notion and
+ * Linear clients implement read calls only, and the module tree never imports the executor
+ * (`tests/agent/credentials.test.ts` proves both). One key per service is shared with the executor.
  *
  * Everything that is not a secret (models, the InstaRadar project, the Linear team, the mailbox,
  * the tuning knobs) is hardcoded in `shared/config.ts`.
@@ -20,18 +19,18 @@ export interface AgentRuntimeConfig {
   model: string
   /** Smaller model for the consistency check. */
   smallModel: string
-  /** Restricted, read-only Stripe key. */
-  stripeReadKey: string
-  /** Postgres URL of a SELECT-only role on the InstaRadar Supabase. */
-  instaradarDbReadUrl: string
+  /** Stripe secret key (the agent only ever reads with it). */
+  stripeKey: string
+  /** Postgres URL of the InstaRadar database (the agent opens read-only transactions). */
+  instaradarDbUrl: string
   vercelApiToken: string
   /** Vercel team slug and project name of InstaRadar (runtime logs). */
   vercelTeamSlug: string
   vercelProject: string
-  /** Notion integration with read content only. */
-  notionReadToken: string
-  /** Linear read key. */
-  linearReadApiKey: string
+  /** Notion integration token. */
+  notionToken: string
+  /** Linear API key. */
+  linearApiKey: string
   linearTeamId: string
   supportMailbox: string
   siteUrl: string
@@ -53,21 +52,19 @@ export function siteUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
   return 'http://localhost:3000'
 }
 
-/** Read-only view of the environment. Never returns a write credential. */
+/** The agent's view of the environment: its own variables and nothing else. */
 export function agentRuntimeConfig(env: NodeJS.ProcessEnv = process.env): AgentRuntimeConfig {
   return {
     anthropicApiKey: env.ANTHROPIC_API_KEY || '',
     model: MODELS.agent,
     smallModel: MODELS.small,
-    // One key per service is enough (STRIPE_SECRET_KEY, INSTARADAR_DB_URL, NOTION_TOKEN,
-    // LINEAR_API_KEY); the *_READ_* names are the optional least-privilege variant and win when set.
-    stripeReadKey: env.STRIPE_READ_KEY || env.STRIPE_SECRET_KEY || '',
-    instaradarDbReadUrl: env.INSTARADAR_DB_READ_URL || env.INSTARADAR_DB_URL || '',
+    stripeKey: env.STRIPE_SECRET_KEY || '',
+    instaradarDbUrl: env.INSTARADAR_DB_URL || '',
     vercelApiToken: env.VERCEL_API_TOKEN || '',
     vercelTeamSlug: INSTARADAR.vercel.teamSlug,
     vercelProject: INSTARADAR.vercel.project,
-    notionReadToken: env.NOTION_READ_TOKEN || env.NOTION_TOKEN || '',
-    linearReadApiKey: env.LINEAR_READ_API_KEY || env.LINEAR_API_KEY || '',
+    notionToken: env.NOTION_TOKEN || '',
+    linearApiKey: env.LINEAR_API_KEY || '',
     linearTeamId: LINEAR.teamId,
     supportMailbox: MAILBOX.address,
     siteUrl: siteUrlFromEnv(env),
@@ -80,14 +77,10 @@ export function agentRuntimeConfig(env: NodeJS.ProcessEnv = process.env): AgentR
 /** Every environment variable the agent reads. Used by the credentials test and the README. */
 export const AGENT_ENV_VARS = [
   'ANTHROPIC_API_KEY',
-  'STRIPE_READ_KEY',
   'STRIPE_SECRET_KEY',
-  'INSTARADAR_DB_READ_URL',
   'INSTARADAR_DB_URL',
   'VERCEL_API_TOKEN',
-  'NOTION_READ_TOKEN',
   'NOTION_TOKEN',
-  'LINEAR_READ_API_KEY',
   'LINEAR_API_KEY',
   'NUXT_PUBLIC_SITE_URL',
   'VERCEL_PROJECT_PRODUCTION_URL',

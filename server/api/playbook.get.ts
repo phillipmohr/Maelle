@@ -1,7 +1,7 @@
 /**
  * GET /api/playbook — owner: IRDR-459. Read-only links into Notion: the Customer Support protocol,
  * the 17 templates with their actions, Examples and Knowledge Base with live counts through
- * NOTION_READ_TOKEN (snapshot counts without it).
+ * NOTION_TOKEN (snapshot counts without it).
  */
 import type { PlaybookResponse } from '#shared/api'
 import { NOTION, TEMPLATE_CASE_TYPES, CASE_TYPES, notionPageUrl } from '#shared/case-types'
@@ -9,7 +9,7 @@ import { loadPlaybookCounts } from '../learning/notion-counts'
 
 export default defineEventHandler(async (): Promise<PlaybookResponse> => {
   const support = notionPageUrl(NOTION.customerSupportPageId)
-  const counts = await loadPlaybookCounts(process.env.NOTION_READ_TOKEN || process.env.NOTION_TOKEN)
+  const counts = await loadPlaybookCounts(process.env.NOTION_TOKEN)
   return {
     protocol: [
       { title: 'Persona & Tone', url: support },

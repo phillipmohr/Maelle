@@ -1,5 +1,5 @@
 /**
- * The docs/notion snapshot as Knowledge. Used when NOTION_READ_TOKEN is missing or Notion fails,
+ * The docs/notion snapshot as Knowledge. Used when NOTION_TOKEN is missing or Notion fails,
  * and by tests and evals. The JSON files are bundled by the build; the protocol markdown is embedded
  * in protocol-snapshot.ts (kept in sync by a test).
  */

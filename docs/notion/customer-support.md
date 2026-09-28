@@ -1,7 +1,7 @@
 # Customer Support (Notion snapshot, 2026-09-27)
 
 Source: https://app.notion.com/p/3e8c931f6ae58012a0a7ec9a1adb4259 (Maelle Superbrain / Features / Customer Support).
-The agent reads this page at runtime with NOTION_READ_TOKEN; this file is the fixture for tests and evals.
+The agent reads this page at runtime with NOTION_TOKEN; this file is the fixture for tests and evals.
 
 Related databases:
 

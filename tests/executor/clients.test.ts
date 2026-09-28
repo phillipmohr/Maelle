@@ -78,9 +78,9 @@ describe('clients from the environment', () => {
   it('builds real adapters when the credentials are set', () => {
     const real = createClientsFromEnv({
       NODE_ENV: 'production',
-      STRIPE_WRITE_KEY: 'rk_test_placeholder',
-      LINEAR_WRITE_API_KEY: 'lin_api_placeholder',
-      INSTARADAR_DB_WRITE_URL: 'postgresql://executor@127.0.0.1:1/instaradar',
+      STRIPE_SECRET_KEY: 'sk_test_placeholder',
+      LINEAR_API_KEY: 'lin_api_placeholder',
+      INSTARADAR_DB_URL: 'postgresql://executor@127.0.0.1:1/instaradar',
       INSTARADAR_SUPABASE_SERVICE_ROLE_KEY: 'service-role-placeholder',
     })
     expect(real.modes).toEqual({
@@ -89,14 +89,6 @@ describe('clients from the environment', () => {
       linear: 'real',
       authAdmin: 'real',
     })
-    // One key per service is enough; the *_WRITE_* names are the optional least-privilege variant.
-    const single = createClientsFromEnv({
-      NODE_ENV: 'production',
-      STRIPE_SECRET_KEY: 'sk_test_placeholder',
-      LINEAR_API_KEY: 'lin_api_placeholder',
-      INSTARADAR_DB_URL: 'postgresql://maelle@127.0.0.1:1/instaradar',
-    })
-    expect(single.modes).toMatchObject({ stripe: 'real', instaradar: 'real', linear: 'real' })
   })
 
   it('deletes a user from the InstaRadar tables children first, the profile last', () => {

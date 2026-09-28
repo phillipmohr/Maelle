@@ -1,5 +1,5 @@
 /**
- * Knowledge loader: Notion at runtime (NOTION_READ_TOKEN) with an in-process cache of a few minutes,
+ * Knowledge loader: Notion at runtime (NOTION_TOKEN) with an in-process cache of a few minutes,
  * the docs/notion snapshot when the token is missing or Notion fails. No sync, no embeddings, no
  * staleness tracking: the knowledge base is small and read whole.
  */

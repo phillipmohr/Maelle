@@ -1,5 +1,5 @@
 /**
- * Stripe, read only. The real adapter is constructed with STRIPE_SECRET_KEY, or STRIPE_READ_KEY (a restricted key with
+ * Stripe, read only. The real adapter is constructed with STRIPE_SECRET_KEY (or a restricted key with
  * read permissions only) and never exposes the Stripe instance; the interface has no write method,
  * so even a key with wider permissions could not be used for a write from here.
  */
