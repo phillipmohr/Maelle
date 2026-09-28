@@ -52,8 +52,8 @@ export function createToolsFromEnv(
     vercelLogsFromDrain?: boolean
   } = {},
 ): AgentTools {
-  const stripe = config.stripeReadKey
-    ? createStripeReadClient(config.stripeReadKey)
+  const stripe = config.stripeKey
+    ? createStripeReadClient(config.stripeKey)
     : unconfigured<StripeReadClient>('Stripe', [
         'findCustomersByEmail',
         'searchCustomers',
@@ -66,8 +66,8 @@ export function createToolsFromEnv(
         'listEvents',
         'retrieve',
       ])
-  const instaradar = config.instaradarDbReadUrl
-    ? createInstaradarReadClient(config.instaradarDbReadUrl)
+  const instaradar = config.instaradarDbUrl
+    ? createInstaradarReadClient(config.instaradarDbUrl)
     : unconfigured<InstaradarReadClient>('InstaRadar database', [
         'findUserByEmail',
         'listTrackedProfiles',
@@ -91,11 +91,11 @@ export function createToolsFromEnv(
   } else {
     vercel = unconfigured<VercelLogsClient>('Vercel logs', ['search'])
   }
-  const linear = config.linearReadApiKey
-    ? createLinearReadClient(config.linearReadApiKey, config.linearTeamId || undefined)
+  const linear = config.linearApiKey
+    ? createLinearReadClient(config.linearApiKey, config.linearTeamId || undefined)
     : unconfigured<LinearReadClient>('Linear', ['searchIssues', 'getIssue'])
-  const notion = config.notionReadToken
-    ? createNotionReadClient(config.notionReadToken)
+  const notion = config.notionToken
+    ? createNotionReadClient(config.notionToken)
     : unconfigured<NotionReadClient>('Notion', ['queryDataSource', 'getPageText'])
   return { stripe, instaradar, vercel, linear, notion }
 }

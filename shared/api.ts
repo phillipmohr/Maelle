@@ -472,7 +472,7 @@ export interface ActivityQuery {
 }
 
 export interface PlaybookResponse {
-  /** True when the counts were read from Notion (NOTION_READ_TOKEN), false for the snapshot. */
+  /** True when the counts were read from Notion (NOTION_TOKEN), false for the snapshot. */
   liveCounts?: boolean
   examplesStatus?: { active: number; draft: number }
 }
@@ -480,7 +480,7 @@ export interface PlaybookResponse {
 export interface LearningResponse {
   /** True when the page had already been created for this ticket and kind (idempotent). */
   existing?: boolean
-  /** 'notion' through the Notion API, 'fake' when NOTION_WRITE_TOKEN is missing. */
+  /** 'notion' through the Notion API, 'fake' when NOTION_TOKEN is missing. */
   writer?: 'notion' | 'fake'
 }
 

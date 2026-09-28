@@ -1,7 +1,8 @@
 /**
- * The agent code path has no access to write credentials. Static: nothing under server/agent (or
- * the agent's routes and plugin) references a write key name or imports the executor. Runtime: the
- * agent's config accessor exposes read keys only, even when the environment holds write keys.
+ * The agent is read-only by construction. Static: nothing under server/agent (or the agent's routes
+ * and plugin) imports the executor, and only config.ts reads the environment. Runtime: the agent's
+ * config accessor exposes the agent's own variables and none of the other secrets, even when the
+ * environment holds them.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
@@ -27,29 +28,19 @@ const AGENT_FILES = [
   path.join(ROOT, 'server', 'plugins', 'agent.ts'),
 ]
 
-const WRITE_KEY_NAMES = [
-  'STRIPE_WRITE_KEY',
-  'INSTARADAR_DB_WRITE_URL',
-  'LINEAR_WRITE_API_KEY',
-  'NOTION_WRITE_TOKEN',
-  'stripeWriteKey',
-  'instaradarDbWriteUrl',
-  'linearWriteApiKey',
-  'notionWriteToken',
-]
+/** Secrets that belong to other parts of Maelle and must never reach the agent. */
+const FOREIGN_SECRETS = {
+  SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_FOREIGN',
+  SUPABASE_DB_URL: 'postgresql://FOREIGN@db/maelle',
+  MAIL_PASSWORD: 'mail-FOREIGN',
+  CRON_SECRET: 'cron-FOREIGN',
+  INSTARADAR_SUPABASE_SERVICE_ROLE_KEY: 'service-role-FOREIGN',
+  LINEAR_WEBHOOK_SECRET: 'webhook-FOREIGN',
+}
 
 describe('agent credentials (static)', () => {
   it('covers the agent module tree', () => {
     expect(AGENT_FILES.length).toBeGreaterThan(20)
-  })
-
-  it('never references a write credential name', () => {
-    for (const file of AGENT_FILES) {
-      const src = readFileSync(file, 'utf8')
-      for (const name of WRITE_KEY_NAMES) {
-        expect(src.includes(name), `${path.relative(ROOT, file)} references ${name}`).toBe(false)
-      }
-    }
   })
 
   it('never imports the executor', () => {
@@ -75,54 +66,47 @@ describe('agent credentials (static)', () => {
       )
     }
   })
+
+  it('never names a secret that belongs to another part of Maelle', () => {
+    // SUPABASE_DB_URL is the agent's own store (it writes proposals there) and may appear in its
+    // "database is not configured" messages; every other secret is off limits even by name.
+    const names = Object.keys(FOREIGN_SECRETS).filter((n) => n !== 'SUPABASE_DB_URL')
+    for (const file of AGENT_FILES) {
+      const src = readFileSync(file, 'utf8')
+      for (const name of names) {
+        expect(src.includes(name), `${path.relative(ROOT, file)} references ${name}`).toBe(false)
+      }
+    }
+  })
 })
 
 describe('agent credentials (runtime)', () => {
   const env = {
-    ANTHROPIC_API_KEY: 'sk-ant-read',
-    STRIPE_READ_KEY: 'rk_live_read',
-    STRIPE_WRITE_KEY: 'rk_live_WRITE_SECRET',
-    INSTARADAR_DB_READ_URL: 'postgresql://reader@db/instaradar',
-    INSTARADAR_DB_WRITE_URL: 'postgresql://WRITER_SECRET@db/instaradar',
-    LINEAR_READ_API_KEY: 'lin_read',
-    LINEAR_WRITE_API_KEY: 'lin_WRITE_SECRET',
-    NOTION_READ_TOKEN: 'ntn_read',
-    NOTION_WRITE_TOKEN: 'ntn_WRITE_SECRET',
+    ANTHROPIC_API_KEY: 'sk-ant-agent',
+    STRIPE_SECRET_KEY: 'sk_live_shared',
+    INSTARADAR_DB_URL: 'postgresql://maelle@db/instaradar',
+    LINEAR_API_KEY: 'lin_shared',
+    NOTION_TOKEN: 'ntn_shared',
     VERCEL_API_TOKEN: 'vercel_read',
+    ...FOREIGN_SECRETS,
   } as NodeJS.ProcessEnv
 
-  it('exposes read keys only', () => {
+  it('exposes the agent variables and nothing else', () => {
     const config = agentRuntimeConfig(env)
     const json = JSON.stringify(config)
-    expect(json).not.toContain('WRITE_SECRET')
-    expect(json).not.toContain('WRITER_SECRET')
-    for (const key of Object.keys(config)) expect(key).not.toMatch(/write/i)
-    expect(config.stripeReadKey).toBe('rk_live_read')
-    expect(config.instaradarDbReadUrl).toBe('postgresql://reader@db/instaradar')
-    expect(config.linearReadApiKey).toBe('lin_read')
-    expect(config.notionReadToken).toBe('ntn_read')
+    expect(json).not.toContain('FOREIGN')
+    expect(config.stripeKey).toBe('sk_live_shared')
+    expect(config.instaradarDbUrl).toBe('postgresql://maelle@db/instaradar')
+    expect(config.linearApiKey).toBe('lin_shared')
+    expect(config.notionToken).toBe('ntn_shared')
+    expect(config.vercelApiToken).toBe('vercel_read')
   })
 
-  it('lists no write variable among the variables it reads', () => {
-    for (const v of AGENT_ENV_VARS) expect(v).not.toMatch(/WRITE/)
-  })
-
-  it('accepts one key per service, with the read-only variant winning when both are set', () => {
-    const single = agentRuntimeConfig({
-      STRIPE_SECRET_KEY: 'sk_single',
-      INSTARADAR_DB_URL: 'postgresql://single@db/instaradar',
-      NOTION_TOKEN: 'ntn_single',
-      LINEAR_API_KEY: 'lin_single',
-    } as NodeJS.ProcessEnv)
-    expect(single.stripeReadKey).toBe('sk_single')
-    expect(single.instaradarDbReadUrl).toBe('postgresql://single@db/instaradar')
-    expect(single.notionReadToken).toBe('ntn_single')
-    expect(single.linearReadApiKey).toBe('lin_single')
-    const both = agentRuntimeConfig({
-      STRIPE_SECRET_KEY: 'sk_single',
-      STRIPE_READ_KEY: 'rk_read',
-    } as NodeJS.ProcessEnv)
-    expect(both.stripeReadKey).toBe('rk_read')
+  it('lists one variable per service and no foreign secret among the variables it reads', () => {
+    for (const name of Object.keys(FOREIGN_SECRETS)) expect(AGENT_ENV_VARS).not.toContain(name)
+    for (const v of AGENT_ENV_VARS) expect(v).not.toMatch(/READ|WRITE/)
+    expect(AGENT_ENV_VARS).toContain('STRIPE_SECRET_KEY')
+    expect(AGENT_ENV_VARS).toContain('INSTARADAR_DB_URL')
   })
 
   it('uses the models and the InstaRadar project fixed in shared/config.ts', () => {

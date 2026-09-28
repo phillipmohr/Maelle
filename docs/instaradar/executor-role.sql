@@ -1,4 +1,4 @@
--- InstaRadar: the Postgres role behind Maelle's INSTARADAR_DB_URL (or INSTARADAR_DB_WRITE_URL).
+-- InstaRadar: the Postgres role behind Maelle's INSTARADAR_DB_URL.
 -- Exactly the grants the two executor actions need, nothing else. Run as the database owner.
 -- Replace the password before running; the resulting URL is
 --   postgresql://maelle_executor:<password>@<host>:5432/postgres?sslmode=require

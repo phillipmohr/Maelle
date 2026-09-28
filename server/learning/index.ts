@@ -1,7 +1,7 @@
 /**
  * The learning loop: Save as example and Create KB draft. Both are idempotent per ticket
  * (learning_events), both create Draft pages only, and both work with the fake writer when
- * NOTION_WRITE_TOKEN is missing.
+ * NOTION_TOKEN is missing.
  */
 import type { LearningResponse } from '#shared/api'
 import { buildExamplePage } from './examples'
