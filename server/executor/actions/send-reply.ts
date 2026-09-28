@@ -25,6 +25,7 @@ export const sendReply: ActionHandler<'send_reply'> = {
       const sent = await ctx.mail.sendReply(ctx.ticket.id, final, {
         sentBy: ctx.executedBy,
         idempotencyKey: ctx.idempotencyKey,
+        cc: params.cc,
       })
       return {
         result: {

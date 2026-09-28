@@ -25,6 +25,8 @@ import type {
 
 /** Read, modify labels and send. */
 export const GMAIL_SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+/** Upper bound for a full sync; the bootstrap window is a day or two, so this is never reached in practice. */
+export const BOOTSTRAP_MAX_MESSAGES = 5_000
 
 export function createGmailAuth(cfg: GmailConfig, mailbox: string): OAuth2Client {
   if (cfg.serviceAccountJson) {
@@ -120,15 +122,23 @@ export class GmailProvider implements MailProvider {
     const profile = await this.api.users.getProfile({ userId: 'me' })
     const historyId = profile.data.historyId
     if (!historyId) throw new Error('gmail: profile has no historyId')
-    const res = await this.api.users.messages.list({
-      userId: 'me',
-      labelIds: ['INBOX'],
-      q: `newer_than:${Math.max(1, opts.bootstrapDays)}d`,
-      maxResults: opts.limit,
-    })
-    const messages = (res.data.messages ?? [])
-      .filter((m): m is gmail_v1.Schema$Message & { id: string } => Boolean(m.id))
-      .map((m) => ({ id: m.id, threadId: m.threadId ?? null }))
+    // Every message of the window: the cursor jumps to `historyId` afterwards, so anything not
+    // listed here would never be seen again (history.list only reports later additions).
+    const messages: ProviderMessageRef[] = []
+    let pageToken: string | undefined
+    do {
+      const res = await this.api.users.messages.list({
+        userId: 'me',
+        labelIds: ['INBOX'],
+        q: `newer_than:${Math.max(1, opts.bootstrapDays)}d`,
+        maxResults: 500,
+        pageToken,
+      })
+      for (const m of res.data.messages ?? []) {
+        if (m.id) messages.push({ id: m.id, threadId: m.threadId ?? null })
+      }
+      pageToken = res.data.nextPageToken ?? undefined
+    } while (pageToken && messages.length < BOOTSTRAP_MAX_MESSAGES)
     return { messages, nextCursor: { value: historyId }, reset: true }
   }
 

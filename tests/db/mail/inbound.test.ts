@@ -129,7 +129,9 @@ describe.skipIf(!url)('inbound mail', () => {
         text_stripped: string | null
         in_reply_to: string | null
       }>(
-        'select direction, text_stripped, in_reply_to from public.messages where ticket_id = $1 order by created_at',
+        // created_at is the transaction start for every row inside withRollback, so order by the
+        // message timestamps (07:12Z inbound, 12:00Z outbound, 14:10Z reply) instead.
+        'select direction, text_stripped, in_reply_to from public.messages where ticket_id = $1 order by coalesce(received_at, sent_at), created_at',
         [ticket.id],
       )
       expect(messages.map((m) => m.direction)).toEqual(['in', 'out', 'in'])

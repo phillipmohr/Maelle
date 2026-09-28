@@ -60,6 +60,7 @@ export function createAgentService(overrides: Partial<AgentDeps> = {}): AgentSer
       return {
         runId: '',
         status: 'failed' as const,
+        retryable: false,
         error: 'Database is not configured (SUPABASE_DB_URL)',
         durationMs: 0,
         progress: {},
@@ -71,7 +72,13 @@ export function createAgentService(overrides: Partial<AgentDeps> = {}): AgentSer
     runDetailed,
     async run(ticketId, trigger, opts) {
       const r = await runDetailed(ticketId, trigger, opts)
-      return { runId: r.runId, status: r.status, proposalId: r.proposalId, error: r.error }
+      return {
+        runId: r.runId,
+        status: r.status,
+        proposalId: r.proposalId,
+        error: r.error,
+        retryable: r.retryable,
+      }
     },
   }
 }

@@ -388,6 +388,22 @@ export async function updateExecution(
   return (await getExecution(q, id))!
 }
 
+/**
+ * The ticket's scheduled rows, locked for the caller's transaction. A row the runner has already
+ * claimed (running) is excluded; a row the runner is claiming right now blocks until that claim
+ * commits and is then excluded too, so undo and runDueScheduled never both act on the same reply.
+ */
+export async function lockScheduledExecutions(
+  q: Queryable,
+  ticketId: string,
+): Promise<ExecutionRecord[]> {
+  const r = await q.query<Row>(
+    `${EXECUTION_SELECT} where e.ticket_id = $1 and e.status = 'scheduled' order by e.created_at for update of e`,
+    [ticketId],
+  )
+  return r.rows.map(mapExecution)
+}
+
 /** Scheduled Auto replies whose time has come. Locks them so a parallel tick skips them. */
 export async function claimDueScheduled(q: Queryable, now: Date): Promise<ExecutionRecord[]> {
   const r = await q.query<Row>(

@@ -13,7 +13,13 @@ export default defineNitroPlugin(() => {
   registerService('agent', agent)
   const register = () =>
     services.jobs.registerHandler('agent_run', async (payload, ctx) => {
-      await agent.run(payload.ticketId, payload.trigger, { jobId: ctx.jobId, attempt: ctx.attempt })
+      const r = await agent.run(payload.ticketId, payload.trigger, {
+        jobId: ctx.jobId,
+        attempt: ctx.attempt,
+      })
+      // A retryable failure (model overloaded, a source timed out) must reach the job runner, which
+      // backs off and tries again; precondition failures (wrong status, missing ticket) end here.
+      if (r.status === 'failed' && r.retryable) throw new Error(r.error ?? 'agent run failed')
     })
   register()
   setTimeout(register, 0)

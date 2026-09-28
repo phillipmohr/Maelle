@@ -78,7 +78,7 @@ export interface MailService {
   sendReply(
     ticketId: string,
     draft: ReplyDraft,
-    opts?: { sentBy: 'you' | 'auto'; idempotencyKey?: string },
+    opts?: { sentBy: 'you' | 'auto'; idempotencyKey?: string; cc?: string[] },
   ): Promise<SentMail>
   /** Alerts and digests to NOTIFY_EMAIL. */
   sendSystemEmail(to: string, subject: string, body: string): Promise<void>
@@ -91,6 +91,8 @@ export interface AgentRunResult {
   status: 'succeeded' | 'failed'
   proposalId?: string
   error?: string
+  /** Failed runs only: true when a later attempt can succeed (model, research or write error). */
+  retryable?: boolean
 }
 
 export interface AgentService {

@@ -44,7 +44,11 @@ describe('ticket status machine', () => {
     expect(() => transition('new', 'closed')).toThrow(InvalidTransitionError)
     expect(() => transition('closed', 'executing')).toThrow(/Invalid ticket transition/)
     expect(() => transition('researching', 'executing')).toThrow(InvalidTransitionError)
-    expect(() => transition('waiting_on_customer', 'closed')).toThrow(InvalidTransitionError)
+    expect(() => transition('waiting_on_customer', 'executing')).toThrow(InvalidTransitionError)
+  })
+
+  it('lets a waiting ticket be marked done when the customer never writes back', () => {
+    expect(transition('waiting_on_customer', 'closed')).toBe('closed')
   })
 
   it('every status has a transition table entry and every target is a known status', () => {

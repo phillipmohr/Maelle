@@ -193,6 +193,10 @@ const EVENT_TYPES = [
   'payment_intent.payment_failed',
 ]
 
+/** Account-wide events looked at for one customer timeline (Stripe keeps 30 days anyway). */
+const EVENTS_SCAN_LIMIT = 2_000
+const EVENTS_PER_CUSTOMER_LIMIT = 200
+
 export function createStripeReadClient(readKey: string): StripeReadClient {
   const stripe = new Stripe(readKey, { maxNetworkRetries: 2, timeout: 20_000 })
   return {
@@ -255,13 +259,21 @@ export function createStripeReadClient(readKey: string): StripeReadClient {
     },
     async listEvents(customerId, days) {
       const gte = Math.floor((Date.now() - days * 86_400_000) / 1000)
-      const res = await stripe.events.list({ created: { gte }, types: EVENT_TYPES, limit: 100 })
-      return res.data
-        .filter(
-          (e) => idOf((e.data?.object as unknown as Obj | undefined)?.customer) === customerId,
-        )
-        .map(eventSummary)
-        .sort((a, b) => a.created.localeCompare(b.created))
+      // Events cannot be filtered by customer server-side: page through the window (newest first)
+      // and keep the customer's. Bounded so a busy account cannot turn one lookup into a crawl.
+      const out: StripeEventSummary[] = []
+      let scanned = 0
+      for await (const e of stripe.events.list({
+        created: { gte },
+        types: EVENT_TYPES,
+        limit: 100,
+      })) {
+        scanned++
+        if (idOf((e.data?.object as unknown as Obj | undefined)?.customer) === customerId)
+          out.push(eventSummary(e))
+        if (scanned >= EVENTS_SCAN_LIMIT || out.length >= EVENTS_PER_CUSTOMER_LIMIT) break
+      }
+      return out.sort((a, b) => a.created.localeCompare(b.created))
     },
     async retrieve(id) {
       const prefix = id.split('_')[0]

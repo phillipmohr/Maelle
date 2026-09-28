@@ -3,7 +3,7 @@
  *
  * new → researching → needs_decision → executing → closed | action_failed | waiting_on_customer
  * needs_decision ↔ snoozed
- * waiting_on_customer → researching (customer reply)
+ * waiting_on_customer → researching (customer reply) | closed (marked done, the customer never wrote)
  * needs_decision → manual → closed (after reject)
  * executing → auto_pending → closed (Auto, undo window)
  * closed → researching (customer writes again)
@@ -44,7 +44,8 @@ export const TRANSITIONS: Readonly<Record<TicketStatus, readonly TicketStatus[]>
   executing: ['closed', 'action_failed', 'waiting_on_customer', 'auto_pending'],
   // retry → executing, mark done → closed
   action_failed: ['executing', 'closed'],
-  waiting_on_customer: ['researching'],
+  // customer reply → researching; "mark as done" while nothing comes → closed
+  waiting_on_customer: ['researching', 'closed'],
   // wake-up → needs_decision, customer wrote while snoozed → researching
   snoozed: ['needs_decision', 'researching'],
   // manual send runs actions → executing → closed; or straight to closed

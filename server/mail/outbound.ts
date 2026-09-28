@@ -104,11 +104,12 @@ async function loadAttachments(
   return out
 }
 
-function draftHash(draft: ReplyDraft): string {
+function draftHash(draft: ReplyDraft, cc: string[] = []): string {
   return createHash('sha256')
     .update(
       JSON.stringify({
         to: draft.to,
+        cc,
         subject: draft.subject,
         body: draft.body,
         attachments: (draft.attachments ?? []).map((a) => a.storagePath),
@@ -123,7 +124,7 @@ export async function sendReply(
   ctx: MailContext,
   ticketId: string,
   draft: ReplyDraft,
-  opts: { sentBy?: 'you' | 'auto'; idempotencyKey?: string } = {},
+  opts: { sentBy?: 'you' | 'auto'; idempotencyKey?: string; cc?: string[] } = {},
 ): Promise<SentMail> {
   const { db, config, provider } = ctx
   const now = ctx.now()
@@ -150,7 +151,10 @@ export async function sendReply(
       ? replySubject(draft.subject)
       : replySubject(threadSubject)
     : draft.subject.trim()
-  const key = `reply:${ticketId}:${opts.idempotencyKey ?? draftHash(draft)}`
+  const cc = [
+    ...new Set((opts.cc ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean)),
+  ].filter((a) => a !== draft.to.toLowerCase())
+  const key = `reply:${ticketId}:${opts.idempotencyKey ?? draftHash(draft, cc)}`
 
   const acquired = await acquireSend(db, {
     key,
@@ -177,6 +181,7 @@ export async function sendReply(
   const mail: OutgoingMail = {
     from: { name: config.fromName, address: config.mailbox },
     to: [draft.to],
+    ...(cc.length ? { cc } : {}),
     subject,
     text: draft.body,
     html: textToHtml(draft.body),
@@ -207,9 +212,9 @@ export async function sendReply(
   await db.transaction(async (tx) => {
     await tx.query(
       `insert into public.messages (id, ticket_id, direction, provider_message_id, provider_thread_id, message_id,
-         in_reply_to, "references", from_email, from_name, to_emails, subject, text_body, html_body, text_stripped,
+         in_reply_to, "references", from_email, from_name, to_emails, cc_emails, subject, text_body, html_body, text_stripped,
          attachments, raw_storage_path, sent_at, sent_by)
-       values ($1, $2, 'out', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $12, $14::jsonb, $15, $16, $17)`,
+       values ($1, $2, 'out', $3, $4, $5, $6, $7, $8, $9, $10, $18, $11, $12, $13, $12, $14::jsonb, $15, $16, $17)`,
       [
         messageRowId,
         ticketId,
@@ -228,6 +233,7 @@ export async function sendReply(
         rawPath,
         now,
         opts.sentBy ?? 'you',
+        cc,
       ],
     )
     await tx.query(

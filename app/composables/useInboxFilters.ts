@@ -4,7 +4,7 @@
  * query builders, plus small state composables.
  */
 import type { TicketListItem } from '#shared/api'
-import type { CaseType, RiskLevel } from '#shared/case-types'
+import { CASE_TYPES, type CaseType, type RiskLevel } from '#shared/case-types'
 import type { TicketResolution, TicketStatus } from '#shared/status'
 import type { ClosedFilters } from '~/composables/useTickets'
 
@@ -63,17 +63,16 @@ export function matchesListFilters(i: TicketListItem, f: ListFilters): boolean {
   if (f.statuses.length > 0 && !f.statuses.includes(i.status)) return false
   if (f.caseTypes.length > 0 && (!i.caseType || !f.caseTypes.includes(i.caseType))) return false
   if (f.risk.length > 0 && !f.risk.includes(i.riskLevel)) return false
-  if (f.needsConfirmation && !(i.stage === 1 && i.caseType && requiresConfirmation(i.caseType)))
+  if (
+    f.needsConfirmation &&
+    !(i.stage === 1 && i.caseType && CASE_TYPES[i.caseType].requiresConfirmation)
+  )
     return false
   if (f.tags.length > 0 && !f.tags.some((t) => i.tags.includes(t))) return false
   const at = i.lastCustomerMessageAt ?? i.createdAt
   if (f.from && at < f.from) return false
   if (f.to && at > endOfDay(f.to)) return false
   return true
-}
-
-function requiresConfirmation(c: CaseType): boolean {
-  return c === 'refund_request' || c === 'cancellation_refund_deletion' || c === 'account_deletion'
 }
 
 function endOfDay(iso: string): string {

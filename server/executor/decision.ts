@@ -208,8 +208,18 @@ export function deriveCustomerConfirmed(
 ): boolean {
   if (proposal?.stage === 2) return true
   if (proposal && requiresConfirmation && !proposal.customerConfirmationNeeded) return true
-  if (note && /confirm/i.test(note)) return true
+  if (note && noteConfirms(note)) return true
   return false
+}
+
+const NOTE_CONFIRMS_RE = /\bconfirm(ed|s|ation)?\b/i
+/** "not confirmed", "no confirmation", "awaiting confirmation", "unconfirmed" are not a yes. */
+const NOTE_DENIES_RE =
+  /\b(not|no|never|hasn'?t|haven'?t|didn'?t|isn'?t|without|awaiting|pending|needs?|waiting (for|on)|yet to|still to|un)[\s-]*(yet\s+|explicitly\s+|to\s+)?confirm/i
+
+/** True only for an affirmative confirmation in the approver's note. */
+export function noteConfirms(note: string): boolean {
+  return NOTE_CONFIRMS_RE.test(note) && !NOTE_DENIES_RE.test(note)
 }
 
 /** "Waiting for “Yes, refund”" from the quoted phrase in the reply, else from the queued actions. */

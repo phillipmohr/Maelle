@@ -120,7 +120,9 @@ The design lives in the Claude Design project (AnastasAI Screens). The imported 
 under `docs/design/` (screens, design system bundle, styles). Tokens are in
 `app/assets/css/tokens.css` (verbatim from the design system) and mapped to Tailwind in
 `app/assets/css/main.css`. Fonts (Geist, Geist Mono, Instrument Serif) are self-hosted in
-`app/assets/fonts/`. `/dev/components` shows every shared component in every state.
+`app/assets/fonts/` and tracked in git; `pnpm fonts:fetch` checks them against Google Fonts
+(`SHA256SUMS`) and `pnpm fonts:fetch --update` takes upstream changes. `/dev/components` shows
+every shared component in every state.
 
 Dark only. No icon set: locks, checkboxes and dots are CSS shapes. The proposal is the only lit
 surface on a screen (`<Panel elevation="focus">`).

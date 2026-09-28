@@ -31,7 +31,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export class ImapSmtpProvider implements MailProvider {
   readonly kind = 'imap' as const
-  /** Raw sources fetched together with the listing, so fetch() needs no second connection. */
+  /** Raw sources fetched together with the listing, so fetch() needs no second connection. Emptied on every listing and as each message is fetched. */
   private readonly cache = new Map<string, FetchedRaw>()
   private transporter: Transporter | null = null
 
@@ -61,6 +61,7 @@ export class ImapSmtpProvider implements MailProvider {
   }
 
   async listNew(cursor: MailCursor | null, opts: ListNewOptions): Promise<ListNewResult> {
+    this.cache.clear()
     return this.withClient(async (client) => {
       const lock = await client.getMailboxLock('INBOX')
       try {
@@ -111,7 +112,10 @@ export class ImapSmtpProvider implements MailProvider {
 
   async fetch(ref: ProviderMessageRef): Promise<FetchedRaw> {
     const cached = this.cache.get(ref.id)
-    if (cached) return cached
+    if (cached) {
+      this.cache.delete(ref.id)
+      return cached
+    }
     const uid = Number(ref.id.split(':')[1])
     if (!Number.isFinite(uid)) throw new Error(`imap: bad message ref ${ref.id}`)
     return this.withClient(async (client) => {

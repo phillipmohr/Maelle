@@ -160,6 +160,24 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
     }
   }
 
+  /**
+   * The recipient is the proposal's (the agent pins it to the ticket's customer), never the
+   * request's: an edited or added Send reply cannot redirect the thread to another address.
+   */
+  function pinRecipient(
+    plan: ReturnType<typeof planApprove>,
+    proposal: ProposalRecord,
+    ticket: TicketRecord,
+  ) {
+    const proposed = proposal.actions.find((a) => a.type === 'send_reply')?.params.to
+    const to =
+      (typeof proposed === 'string' && proposed) || proposal.replyDraft?.to || ticket.customerEmail
+    for (const a of plan.actions) {
+      if (a.type === 'send_reply') a.params = { ...a.params, to }
+    }
+    if (plan.replyDraft) plan.replyDraft = { ...plan.replyDraft, to }
+  }
+
   async function scopeRows(q: Queryable, ticketId: string, scopeKey: string) {
     return (await repo.listExecutions(q, ticketId)).filter((e) => scopeKeyOf(e) === scopeKey)
   }
@@ -271,6 +289,7 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
           })
         }
         const plan = planApprove(proposal, input)
+        pinRecipient(plan, proposal, ticket)
         const settings = await repo.loadSettings(tx, ticket.appId)
         const decision: DecisionKind = by === 'auto' ? 'auto' : plan.decision
         const decisionId = await repo.insertDecision(tx, {
@@ -418,10 +437,11 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
           note: `Manual reply sent · ${ordered.length} action${ordered.length === 1 ? '' : 's'}`,
         })
         await cancelOtherPending(tx, ticket.id, null, 'Handled manually')
+        // The reply always goes to the ticket's customer, whatever the request said.
         const draft: ReplyDraft = {
           template: null,
           templateNotionPageId: null,
-          to: input.reply.to,
+          to: ticket.customerEmail,
           subject: input.reply.subject,
           body: input.reply.body,
           attachments: [],
@@ -431,7 +451,7 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
           ...ordered,
           {
             type: 'send_reply' as const,
-            params: { to: input.reply.to, cc: [], includeAttachments: false, draft },
+            params: { to: ticket.customerEmail, cc: [], includeAttachments: false, draft },
           },
         ]
         for (const [i, a] of all.entries()) {
@@ -613,10 +633,14 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
         throw new ExecutorError(400, 'A note is required', { error: 'note_required' })
       return withTransaction(async (tx) => {
         const ticket = await mustFindTicket(tx, ticketId, true)
-        if (ticket.status !== 'action_failed' && ticket.status !== 'manual') {
+        if (
+          ticket.status !== 'action_failed' &&
+          ticket.status !== 'manual' &&
+          ticket.status !== 'waiting_on_customer'
+        ) {
           throw wrongStatus(
             ticket,
-            'Mark done is for tickets with a failed action or handled manually',
+            'Mark done is for tickets with a failed action, handled manually or waiting on the customer',
           )
         }
         await cancelOtherPending(tx, ticket.id, null, `Marked done: ${note.trim()}`)
@@ -666,8 +690,10 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
       return withTransaction(async (tx) => {
         const ticket = await mustFindTicket(tx, ticketId, true)
         if (ticket.status !== 'auto_pending') throw wrongStatus(ticket, 'Nothing to undo')
+        // Lock the scheduled rows first: a tick that is claiming them right now commits `running`
+        // before this select returns, and the row is then no longer scheduled ("too late").
+        const scheduled = await repo.lockScheduledExecutions(tx, ticket.id)
         const latest = latestAttempts(await repo.listExecutions(tx, ticket.id))
-        const scheduled = latest.filter((e) => e.status === 'scheduled')
         if (scheduled.length === 0) {
           const running = latest.some((e) => e.status === 'running')
           throw new ExecutorError(

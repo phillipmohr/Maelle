@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { serverSupabaseUser } from '#supabase/server'
 
@@ -40,7 +41,14 @@ export function requireCronSecret(event: H3Event): void {
   const header = getHeader(event, 'authorization') || ''
   const bearer = header.startsWith('Bearer ') ? header.slice(7) : ''
   const alt = getHeader(event, 'x-cron-secret') || ''
-  if (!secret || (bearer !== secret && alt !== secret)) {
+  if (!secret || (!secretsMatch(bearer, secret) && !secretsMatch(alt, secret))) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid cron secret' })
   }
+}
+
+/** Constant-time comparison, so response timing never leaks how much of the secret matched. */
+function secretsMatch(given: string, expected: string): boolean {
+  const a = Buffer.from(given)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
 }

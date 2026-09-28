@@ -74,6 +74,7 @@ export async function runAgent(
     return {
       runId: '',
       status: 'failed',
+      retryable: false,
       error: `Ticket ${ticketId} not found`,
       durationMs: 0,
       progress,
@@ -92,6 +93,7 @@ export async function runAgent(
     return {
       runId: start.runId,
       status: 'failed',
+      retryable: false,
       error: 'A run for this job is already in progress',
       durationMs: 0,
       progress,
@@ -107,7 +109,14 @@ export async function runAgent(
   ) {
     const error = `Cannot run the agent while the ticket is ${status}`
     await store.finishRun(runId, { status: 'failed', error, durationMs: Date.now() - startedAt })
-    return { runId, status: 'failed', error, durationMs: Date.now() - startedAt, progress }
+    return {
+      runId,
+      status: 'failed',
+      retryable: false,
+      error,
+      durationMs: Date.now() - startedAt,
+      progress,
+    }
   }
   if (status !== 'researching')
     await store.setTicketStatus(ticketId, status, transition(status, 'researching'))
@@ -330,6 +339,8 @@ export async function runAgent(
     } catch (err) {
       log('could not mark the ticket after the failure', err)
     }
-    return { runId, status: 'failed', error, durationMs, progress }
+    // Research, model and write failures are worth another attempt (the job runner backs off);
+    // the ticket is back in needs_decision meanwhile, and a retried job reuses this run row.
+    return { runId, status: 'failed', retryable: true, error, durationMs, progress }
   }
 }
