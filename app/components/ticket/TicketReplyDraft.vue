@@ -6,7 +6,10 @@
  */
 import type { ConsistencyCheckResponse } from '#shared/api'
 import { notionPageUrl } from '#shared/case-types'
+import { MAILBOX } from '#shared/config'
 import type { ReplyDraft } from '#shared/proposal'
+
+const signature = MAILBOX.signature
 
 const props = defineProps<{
   reply: ReplyDraft
@@ -116,6 +119,13 @@ watch(
         <p v-for="(p, i) in paragraphs" :key="i" class="whitespace-pre-line [text-wrap:pretty]">
           {{ p }}
         </p>
+      </div>
+      <div
+        class="flex flex-col gap-1 border-t border-line px-[18px] py-3 text-caption leading-[1.5] text-fg-muted"
+        aria-label="Signature"
+      >
+        <p class="whitespace-pre-line">{{ signature }}</p>
+        <Mono class="text-[11px]">Signature · added when the reply is sent</Mono>
       </div>
       <div v-if="reply.attachments.length" class="flex flex-wrap gap-2 px-[18px] pb-4">
         <SourceChip v-for="a in reply.attachments" :key="a.storagePath" class="px-2 py-1"

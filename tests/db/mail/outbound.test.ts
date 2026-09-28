@@ -51,12 +51,15 @@ describe.skipIf(!url)('outbound mail', () => {
         messageId: sent.rfcMessageId,
       })
       expect(mail.from).toEqual({
-        name: 'Anastasia (InstaRadar Support)',
+        name: 'InstaRadar Support',
         address: 'support@instaradar.app',
       })
       const parsed = await parseMail(ctx.provider.sent[0]!.raw)
       expect(parsed.text).toContain('I have cancelled your subscription')
+      // The signature from shared/config.ts is appended at send time, after the "-- " separator.
+      expect(parsed.text).toContain('-- \nBest wishes,\nAnastasia\nCustomer Care · InstaRadar')
       expect(parsed.html).toContain('<p>Hi, thanks for reaching out!</p>')
+      expect(parsed.html).toContain('Customer Care · InstaRadar')
       expect(parsed.inReplyTo).toBe('<multipart-001@mail.example.com>')
 
       const row = await db.one<Record<string, unknown>>(
@@ -264,7 +267,7 @@ describe.skipIf(!url)('outbound mail', () => {
     })
   })
 
-  it('system emails go to NOTIFY_EMAIL and identical ones are sent once per day', async () => {
+  it('system emails go to the notify address and identical ones are sent once per day', async () => {
     await withRollback(async (db) => {
       const ctx = makeMailContext(db)
       await sendSystemEmail(ctx, '', 'Mail fetch failing', 'fetch_mail failed 3 times in a row')

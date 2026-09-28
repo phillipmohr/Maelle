@@ -5,8 +5,11 @@
  */
 import { ACTIONS, ACTION_TYPES, type ActionType } from '#shared/actions'
 import type { TicketRow } from '#shared/api'
+import { MAILBOX } from '#shared/config'
 import { paramsProblem } from '~/composables/useTicketParams'
 import { paramsSummary } from '~/composables/useTicketModel'
+
+const signature = MAILBOX.signature
 
 const props = defineProps<{ ticket: TicketRow; busy: boolean; handledManually: boolean }>()
 const emit = defineEmits<{
@@ -131,6 +134,13 @@ defineExpose({ submit, canSend })
           @keydown.meta.enter.prevent="submit"
           @keydown.ctrl.enter.prevent="submit"
         />
+      </div>
+      <div
+        class="flex flex-col gap-1 border-t border-line px-[18px] py-3 text-caption leading-[1.5] text-fg-muted"
+        aria-label="Signature"
+      >
+        <p class="whitespace-pre-line">{{ signature }}</p>
+        <Mono class="text-[11px]">Signature · added when the reply is sent</Mono>
       </div>
     </div>
 

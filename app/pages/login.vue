@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Sign in: magic link or Google. Only ALLOWED_USER_EMAIL gets through (server + database trigger). */
+/** Sign in: magic link or Google. Only OWNER.email (shared/config.ts) gets through (server + database trigger). */
 definePageMeta({ layout: 'blank' })
 useHead({ title: 'Sign in' })
 

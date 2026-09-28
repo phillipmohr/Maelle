@@ -3,6 +3,7 @@
  * Truncates every public table (schema stays). Refuses non-local databases unless --force is given,
  * so production data is never touched by accident. With --seed it re-seeds afterwards.
  */
+import { OWNER } from '../shared/config'
 import { client, isLocalUrl, requireDbUrl, tableNames } from './lib/db'
 import { seed } from './db-seed'
 
@@ -30,6 +31,6 @@ try {
 }
 
 if (reseed) {
-  await seed(url, { allowedUserEmail: process.env.ALLOWED_USER_EMAIL })
+  await seed(url, { allowedUserEmail: OWNER.email })
   console.log('re-seeded')
 }

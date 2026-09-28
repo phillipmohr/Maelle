@@ -6,7 +6,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { ProposalSchema } from '#shared/proposal'
-import type { InstaradarTables } from '../config'
+import { INSTARADAR } from '#shared/config'
 import type { PreviousTicketSummary, ProgressSource } from '../types'
 import type { AgentTools } from './index'
 import { SELECT_MAX_ROWS } from './instaradar'
@@ -79,13 +79,18 @@ const obj = (
   additionalProperties: false,
 })
 
-export function researchToolDefinitions(tables: InstaradarTables): Anthropic.Tool[] {
+export function researchToolDefinitions(): Anthropic.Tool[] {
+  const t = INSTARADAR.db
   const tableDoc = [
-    `${tables.users.table}(${tables.users.id}, ${tables.users.email}, ${tables.users.plan}, ${tables.users.status}, ${tables.users.createdAt}, ${tables.users.stripeCustomerId}, ${tables.users.lastSignInAt})`,
-    `${tables.trackedProfiles.table}(${tables.trackedProfiles.id}, ${tables.trackedProfiles.userId}, ${tables.trackedProfiles.handle}, ${tables.trackedProfiles.createdAt}, ${tables.trackedProfiles.active})`,
-    `${tables.scans.table}(${tables.scans.userId}, ${tables.scans.handle}, ${tables.scans.createdAt}, ${tables.scans.status}, ${tables.scans.error})`,
-    `${tables.alerts.table}(${tables.alerts.userId}, ${tables.alerts.handle}, ${tables.alerts.type}, ${tables.alerts.createdAt})`,
-    `${tables.signIns.table}(${tables.signIns.userId}, ${tables.signIns.createdAt}, ${tables.signIns.action})`,
+    `${t.schema}.${t.profiles}(id = the auth user id, email, created_at, stripe_customer_id, first_authenticated_at, referral_code)`,
+    `${t.schema}.${t.subscriptions}(user_id, plan, status, stripe_customer_id, stripe_subscription_id, current_period_start, current_period_end, cancel_at_period_end, canceled_at, paused_at, created_at)`,
+    `${t.schema}.${t.trackedProfiles}(tracked_profile_id, user_id, ${t.trackedHandleColumn}, full_name, is_private, follower_count, is_active, last_scanned_at, next_scan_at, created_at)`,
+    `${t.schema}.${t.scanHistory}(tracked_profile_id, status, error_message, error_code, is_partial, scanned_at, created_at)`,
+    `${t.schema}.scan_queue(tracked_profile_id, status, scheduled_at, started_at, completed_at, retry_count, error_message, error_code)`,
+    `${t.schema}.${t.notificationLog}(user_id, tracked_profile_id, channel, event_type, status, sent_at, failed_at, error_message, created_at)`,
+    `${t.schema}.activity_events(tracked_profile_id, event_type, event_data, detected_at)`,
+    `${t.schema}.referrals(referrer_user_id, referee_user_id, code, status, created_at)`,
+    `auth.audit_log_entries(payload->>'actor_id', payload->>'action', created_at)`,
   ].join('; ')
   return [
     {
@@ -190,8 +195,8 @@ export function submitProposalTool(): Anthropic.Tool {
   }
 }
 
-export function allToolDefinitions(tables: InstaradarTables): Anthropic.Tool[] {
-  return [...researchToolDefinitions(tables), submitProposalTool()]
+export function allToolDefinitions(): Anthropic.Tool[] {
+  return [...researchToolDefinitions(), submitProposalTool()]
 }
 
 // ---------------------------------------------------------------- dispatcher

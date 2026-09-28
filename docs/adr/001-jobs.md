@@ -77,8 +77,8 @@ may be late, may fire twice, or may be replaced without changing semantics:
 - Idempotent enqueue through `dedupe_key`, e.g. `agent_run:{ticketId}:{trigger}:{messageId}`.
 - A job whose handler is not registered (another ticket's plugin not deployed yet) is released
   with a 60 s delay without counting an attempt and logged, never dropped and never crashing.
-- Two lanes: `/api/cron/tick` (schedule + all jobs, budget `JOBS_TICK_BUDGET_MS`, default 270 s,
-  long jobs only while `JOBS_LONG_JOB_RESERVE_MS` remains) and `/api/cron/fetch-mail` (fetch_mail
+- Two lanes: `/api/cron/tick` (schedule + all jobs, budget `JOBS.tickBudgetMs` in `shared/config.ts`, 270 s,
+  long jobs only while `JOBS.longJobReserveMs` remains) and `/api/cron/fetch-mail` (fetch_mail
   only, one job, 50 s), so a three minute agent run never delays inbound mail. Both routes exist
   as GET (what Vercel Cron sends) and POST (the binding route table).
 - Health: `notify('system_alert')` when fetch_mail fails three times in a row (and every 60 after),
@@ -105,7 +105,7 @@ select cron.schedule('maelle-fetch-mail', '* * * * *', $$
 - The Vercel project needs the Pro plan for per-minute crons (Hobby allows daily crons only) and a
   function max duration of 300 s for the cron routes. Nitro 2.13 exposes this as
   `nitro.vercel.functions.maxDuration` in `nuxt.config.ts` (owned by the foundation ticket) or via
-  the project's function settings in the Vercel dashboard. `JOBS_TICK_BUDGET_MS` must stay below it.
+  the project's function settings in the Vercel dashboard. `JOBS.tickBudgetMs` must stay below it.
 - Vercel does not retry a failed cron invocation; our state machine makes that unnecessary.
 - Because the cron functions may overlap (a tick running into the next minute), every job handler
   must be idempotent. The runner guarantees a job is not handed to two workers while a lock is fresh,

@@ -1,10 +1,11 @@
 /**
  * Claude condenses a final reply into a Knowledge Base entry. Behind an interface: the Anthropic
- * adapter (ANTHROPIC_API_KEY, model AGENT_SMALL_MODEL, default claude-sonnet-5) or a deterministic
+ * adapter (ANTHROPIC_API_KEY, model MODELS.small from shared/config.ts) or a deterministic
  * fallback (first sentences of the reply) when there is no key or the call fails.
  */
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { MODELS } from '#shared/config'
 import { EM_DASH_RE } from '#shared/proposal'
 
 export const KB_CATEGORIES = [
@@ -21,7 +22,7 @@ export type KbCategory = (typeof KB_CATEGORIES)[number]
 export const KB_TYPES = ['Explanation', 'Limitation', 'How-to', 'Known issue', 'Policy'] as const
 export type KbType = (typeof KB_TYPES)[number]
 
-export const DEFAULT_SMALL_MODEL = 'claude-sonnet-5'
+export const DEFAULT_SMALL_MODEL: string = MODELS.small
 
 export interface KbCondensationInput {
   subject: string | null
@@ -232,7 +233,7 @@ export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelC
   fromEnv = env.ANTHROPIC_API_KEY
     ? createAnthropicModelClient({
         apiKey: env.ANTHROPIC_API_KEY,
-        model: env.AGENT_SMALL_MODEL || DEFAULT_SMALL_MODEL,
+        model: DEFAULT_SMALL_MODEL,
       })
     : createFallbackModelClient()
   return fromEnv

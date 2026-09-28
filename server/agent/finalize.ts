@@ -25,6 +25,27 @@ import { applyRiskPolicy, policyWarnings, type PolicyContext } from './policy'
 import { TranslationSchema, type Translation } from './tools/definitions'
 import type { ConfirmationSignal, ResearchBundle } from './types'
 
+const CLOSING_LINE_RE =
+  /^(?:(?:best|kind|warm|warmest|many)\s+(?:regards|wishes|thanks)|regards|cheers|thanks|thank you|sincerely|yours(?:\s+sincerely)?|take care|all the best|talk soon|best),?\s*$/i
+
+/**
+ * Removes a trailing sign-off ("Best regards, Anastasia, InstaRadar Support") from a draft: the
+ * signature is appended when the mail is sent (shared/config.ts), so a model-written closing would
+ * double it. Only a closing line followed by at most six short lines at the very end is removed.
+ */
+export function stripSignOff(body: string): string {
+  const lines = body.replace(/\s+$/, '').split('\n')
+  const start = Math.max(0, lines.length - 8)
+  for (let i = lines.length - 1; i >= start; i--) {
+    const line = lines[i]!.trim()
+    if (!CLOSING_LINE_RE.test(line)) continue
+    const tail = lines.slice(i + 1).map((l) => l.trim())
+    if (tail.length > 6 || tail.some((l) => l.length > 60)) return body
+    return lines.slice(0, i).join('\n').replace(/\s+$/, '')
+  }
+  return body
+}
+
 export interface FinalizeContext {
   ticket: TicketRow
   messages: MessageRow[]
@@ -147,6 +168,15 @@ export async function finalizeSubmission(
     ) {
       reply.to = ctx.ticket.customerEmail
       notes.push(`reply.to set to ${ctx.ticket.customerEmail}.`)
+    }
+    if (typeof reply.body === 'string') {
+      const stripped = stripSignOff(reply.body)
+      if (stripped !== reply.body) {
+        reply.body = stripped
+        notes.push(
+          'sign-off removed from the reply (the signature is added when the mail is sent).',
+        )
+      }
     }
   }
   if (Array.isArray(rest.actions)) {

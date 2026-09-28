@@ -1,5 +1,5 @@
 /**
- * Live eval: the same fixtures with the real model (AGENT_MODEL, default claude-fable-5-1) and fake
+ * Live eval: the same fixtures with the real model (MODELS.agent, claude-fable-5-1) and fake
  * tools. Runs only when ANTHROPIC_API_KEY is set; otherwise every test is reported as skipped with
  * the reason in its name. Set LIVE_EVAL_ONLY=<fixture id substring> to run a subset.
  */

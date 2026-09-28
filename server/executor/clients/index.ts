@@ -1,13 +1,15 @@
 /**
- * Builds the external clients from the environment. A real adapter is constructed only when its
- * credential is set. Without one, development and tests get the in-memory fake (so the whole flow
- * can be exercised end to end), production gets a client whose every call fails with
+ * Builds the external clients. A real adapter is constructed only when its credential is set
+ * (the non-secret parts, such as the Linear team and the InstaRadar Supabase URL, are fixed in
+ * `shared/config.ts`). Without a credential, development and tests get the in-memory fake (so the
+ * whole flow can be exercised end to end), production gets a client whose every call fails with
  * "<Provider> is not configured (<ENV>)": the executor never pretends.
  */
+import { INSTARADAR, LINEAR } from '#shared/config'
 import type { Clients } from '../types'
 import { createFakeAuthAdmin, createSupabaseAuthAdmin, type FakeAuthAdmin } from './auth-admin'
 import { seedDesignFakes } from './dev-seed'
-import { createInstaradarWriteClient, instaradarConfigFromEnv } from './instaradar'
+import { createInstaradarWriteClient } from './instaradar'
 import { createFakeInstaradar, type FakeInstaradar } from './instaradar-fake'
 import { createLinearWriteClient } from './linear'
 import { createFakeLinear, type FakeLinear } from './linear-fake'
@@ -27,7 +29,7 @@ export interface ClientsFromEnv {
   modes: Record<keyof Clients, ClientMode>
 }
 
-/** Fakes are allowed outside production, or when EXECUTOR_USE_FAKES=true says so explicitly. */
+/** Fakes are allowed outside production, or when EXECUTOR_USE_FAKES=true says so explicitly (dev only). */
 export function fakesAllowed(env: Record<string, string | undefined> = process.env): boolean {
   if (env.EXECUTOR_USE_FAKES === 'true') return true
   if (env.EXECUTOR_USE_FAKES === 'false') return false
@@ -72,7 +74,7 @@ export function createClientsFromEnv(
     instaradar: pick(
       'instaradar',
       Boolean(env.INSTARADAR_DB_WRITE_URL),
-      () => createInstaradarWriteClient(env.INSTARADAR_DB_WRITE_URL!, instaradarConfigFromEnv(env)),
+      () => createInstaradarWriteClient(env.INSTARADAR_DB_WRITE_URL!),
       createFakeInstaradar,
       unconfiguredInstaradar,
     ),
@@ -81,20 +83,17 @@ export function createClientsFromEnv(
       Boolean(env.LINEAR_WRITE_API_KEY),
       () =>
         createLinearWriteClient(env.LINEAR_WRITE_API_KEY!, {
-          ...(env.LINEAR_TEAM_ID ? { teamId: env.LINEAR_TEAM_ID } : {}),
-          ...(env.LINEAR_TEAM_NAME ? { teamName: env.LINEAR_TEAM_NAME } : {}),
+          teamId: LINEAR.teamId,
+          teamName: LINEAR.teamName,
         }),
       createFakeLinear,
       unconfiguredLinear,
     ),
     authAdmin: pick(
       'authAdmin',
-      Boolean(env.INSTARADAR_SUPABASE_URL && env.INSTARADAR_SUPABASE_SERVICE_ROLE_KEY),
+      Boolean(env.INSTARADAR_SUPABASE_SERVICE_ROLE_KEY),
       () =>
-        createSupabaseAuthAdmin(
-          env.INSTARADAR_SUPABASE_URL!,
-          env.INSTARADAR_SUPABASE_SERVICE_ROLE_KEY!,
-        ),
+        createSupabaseAuthAdmin(INSTARADAR.supabaseUrl, env.INSTARADAR_SUPABASE_SERVICE_ROLE_KEY!),
       createFakeAuthAdmin,
       unconfiguredAuthAdmin,
     ),

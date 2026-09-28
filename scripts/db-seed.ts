@@ -3,6 +3,7 @@
  * Inserts the design's sample data (shared/seed) into SUPABASE_DB_URL. Idempotent: existing rows
  * (by primary key) are left alone, so it can run on top of real data without duplicating anything.
  */
+import { OWNER } from '../shared/config'
 import { client, requireDbUrl } from './lib/db'
 import { buildSeed, SEED_TABLE_ORDER, type SeedBundle } from '../shared/seed/data'
 
@@ -98,6 +99,6 @@ export async function seed(
 
 if (process.argv[1] && /db-seed\.(ts|js)$/.test(process.argv[1])) {
   const url = requireDbUrl()
-  await seed(url, { allowedUserEmail: process.env.ALLOWED_USER_EMAIL })
+  await seed(url, { allowedUserEmail: OWNER.email })
   console.log('seed complete')
 }

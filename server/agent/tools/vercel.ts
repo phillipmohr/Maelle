@@ -4,9 +4,10 @@
  * Two adapters:
  *
  * - `api`: the Runtime Logs REST endpoint,
- *   `GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?teamId=…`
+ *   `GET https://api.vercel.com/v1/projects/{projectId}/deployments/{deploymentId}/runtime-logs?slug=…`
  *   (NDJSON, one log entry per line: level, message, timestampInMs, source, requestId, ...). The
- *   production deployment id comes from `GET /v6/deployments?projectId=…&target=production&limit=1`.
+ *   project id is resolved once from the project name (`GET /v9/projects/{name}?slug=<team>`) and
+ *   the production deployment id from `GET /v6/deployments?projectId=…&target=production&limit=1`.
  *   The endpoint is meant for tailing, so it returns the recent window only and is filtered here by
  *   time, text, user id and profile handle. Good enough for "errors of the last days for this user".
  * - `drain`: a Vercel log drain (JSON format) posted into Maelle's own `vercel_logs` table (see the
@@ -43,16 +44,36 @@ export function matchesLogQuery(line: LogLine, q: LogQuery): boolean {
 
 export function createVercelApiLogsClient(opts: {
   token: string
-  projectId: string
-  teamId?: string
+  /** Team slug and project name (or id) of the InstaRadar project, see shared/config.ts. */
+  teamSlug: string
+  project: string
   fetchImpl?: typeof fetch
 }): VercelLogsClient {
   const fetchImpl = opts.fetchImpl ?? fetch
-  const team = opts.teamId ? `teamId=${encodeURIComponent(opts.teamId)}` : ''
+  const team = `slug=${encodeURIComponent(opts.teamSlug)}`
   const headers = { Authorization: `Bearer ${opts.token}` }
+  let projectIdPromise: Promise<string> | null = null
+
+  /** The deployments endpoint wants the project id; resolved once from the project name. */
+  function projectId(): Promise<string> {
+    if (!projectIdPromise) {
+      projectIdPromise = (async () => {
+        const url = `${VERCEL_API}/v9/projects/${encodeURIComponent(opts.project)}?${team}`
+        const res = await fetchImpl(url, { headers })
+        if (!res.ok) throw new Error(`Vercel project ${res.status}`)
+        const body = (await res.json()) as { id?: string }
+        if (!body.id) throw new Error(`Vercel project ${opts.project} not found`)
+        return body.id
+      })().catch((e: unknown) => {
+        projectIdPromise = null
+        throw e
+      })
+    }
+    return projectIdPromise
+  }
 
   async function productionDeploymentId(): Promise<string> {
-    const url = `${VERCEL_API}/v6/deployments?projectId=${encodeURIComponent(opts.projectId)}&target=production&limit=1${team ? `&${team}` : ''}`
+    const url = `${VERCEL_API}/v6/deployments?projectId=${encodeURIComponent(await projectId())}&target=production&limit=1&${team}`
     const res = await fetchImpl(url, { headers })
     if (!res.ok) throw new Error(`Vercel deployments ${res.status}`)
     const body = (await res.json()) as { deployments?: { uid?: string; id?: string }[] }
@@ -66,7 +87,7 @@ export function createVercelApiLogsClient(opts: {
     configured: true,
     async search(query) {
       const deploymentId = await productionDeploymentId()
-      const url = `${VERCEL_API}/v1/projects/${encodeURIComponent(opts.projectId)}/deployments/${encodeURIComponent(deploymentId)}/runtime-logs${team ? `?${team}` : ''}`
+      const url = `${VERCEL_API}/v1/projects/${encodeURIComponent(await projectId())}/deployments/${encodeURIComponent(deploymentId)}/runtime-logs?${team}`
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), READ_BUDGET_MS)
       const lines: LogLine[] = []

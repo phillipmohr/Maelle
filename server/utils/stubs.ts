@@ -5,6 +5,7 @@
  */
 import type { H3Event } from 'h3'
 import type { RouteOwner } from '#shared/api'
+import { OWNER } from '#shared/config'
 import { buildSeed, type SeedBundle } from '#shared/seed/data'
 
 let cachedSeed: { at: number; bundle: SeedBundle } | null = null
@@ -13,7 +14,7 @@ let cachedSeed: { at: number; bundle: SeedBundle } | null = null
 export function seedBundle(): SeedBundle {
   const now = Date.now()
   if (!cachedSeed || now - cachedSeed.at > 60_000) {
-    cachedSeed = { at: now, bundle: buildSeed(new Date(now), process.env.ALLOWED_USER_EMAIL) }
+    cachedSeed = { at: now, bundle: buildSeed(new Date(now), OWNER.email) }
   }
   return cachedSeed.bundle
 }

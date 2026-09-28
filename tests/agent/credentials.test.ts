@@ -6,7 +6,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { AGENT_ENV_VARS, agentRuntimeConfig } from '../../server/agent/config'
+import { AGENT_ENV_VARS, agentRuntimeConfig, siteUrlFromEnv } from '../../server/agent/config'
 
 const ROOT = path.resolve(__dirname, '..', '..')
 
@@ -107,24 +107,25 @@ describe('agent credentials (runtime)', () => {
     for (const v of AGENT_ENV_VARS) expect(v).not.toMatch(/WRITE/)
   })
 
-  it('uses the lead-specified models by default and honours overrides', () => {
-    expect(agentRuntimeConfig({} as NodeJS.ProcessEnv).model).toBe('claude-fable-5-1')
-    expect(agentRuntimeConfig({} as NodeJS.ProcessEnv).smallModel).toBe('claude-sonnet-5')
-    expect(agentRuntimeConfig({ AGENT_MODEL: 'claude-opus-5' } as NodeJS.ProcessEnv).model).toBe(
-      'claude-opus-5',
-    )
+  it('uses the models and the InstaRadar project fixed in shared/config.ts', () => {
+    const c = agentRuntimeConfig({} as NodeJS.ProcessEnv)
+    expect(c.model).toBe('claude-fable-5-1')
+    expect(c.smallModel).toBe('claude-sonnet-5')
+    expect(c.vercelTeamSlug).toBe('phillip-mohrs-projects')
+    expect(c.vercelProject).toBe('instaradar')
+    expect(c.supportMailbox).toBe('support@instaradar.app')
   })
 
-  it('merges INSTARADAR_TABLES overrides onto the defaults', () => {
-    const c = agentRuntimeConfig({
-      INSTARADAR_TABLES: JSON.stringify({ users: { table: 'public.users', email: 'mail' } }),
-    } as NodeJS.ProcessEnv)
-    expect(c.instaradarTables.users.table).toBe('public.users')
-    expect(c.instaradarTables.users.email).toBe('mail')
-    expect(c.instaradarTables.users.id).toBe('id')
-    expect(c.instaradarTables.trackedProfiles.table).toBe('public.tracked_profiles')
-    expect(() => agentRuntimeConfig({ INSTARADAR_TABLES: 'nope' } as NodeJS.ProcessEnv)).toThrow(
-      /JSON/,
-    )
+  it('derives the site URL from Vercel unless a custom domain overrides it', () => {
+    expect(siteUrlFromEnv({} as NodeJS.ProcessEnv)).toBe('http://localhost:3000')
+    expect(
+      siteUrlFromEnv({ VERCEL_PROJECT_PRODUCTION_URL: 'maelle.vercel.app' } as NodeJS.ProcessEnv),
+    ).toBe('https://maelle.vercel.app')
+    expect(
+      siteUrlFromEnv({
+        NUXT_PUBLIC_SITE_URL: 'https://maelle.instaradar.app',
+        VERCEL_PROJECT_PRODUCTION_URL: 'maelle.vercel.app',
+      } as NodeJS.ProcessEnv),
+    ).toBe('https://maelle.instaradar.app')
   })
 })

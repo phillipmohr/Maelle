@@ -1,7 +1,7 @@
 /**
  * POST /api/agent/consistency-check — owner: IRDR-456. Takes the current reply text and the enabled
  * actions, returns mismatches (the reply mentions a refund but the refund action is off, and so on).
- * Deterministic rules always run; the small model (AGENT_SMALL_MODEL) adds judgement when
+ * Deterministic rules always run; the small model (MODELS.small) adds judgement when
  * ANTHROPIC_API_KEY is set.
  */
 import { z } from 'zod'

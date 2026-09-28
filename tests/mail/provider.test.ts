@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { detectProvider, MailConfigError, mailConfigFromEnv } from '../../server/mail/config'
+import { detectProvider, mailConfigFromEnv } from '../../server/mail/config'
 import { createMailProvider } from '../../server/mail/provider'
 import { DirectoryMailProvider, FakeMailProvider } from '../../server/mail/providers/fake'
 import { buildEml, readFixture } from '../fixtures/mail'
@@ -10,56 +10,43 @@ const now = new Date('2026-09-27T12:00:00Z')
 const listOpts = { limit: 10, bootstrapDays: 1, now }
 
 describe('provider selection', () => {
-  it('defaults to fake, honours MAIL_PROVIDER, infers from credentials', () => {
+  it('uses the mailbox when its password is set and the fake otherwise', () => {
     expect(detectProvider({})).toBe('fake')
-    expect(detectProvider({ MAIL_PROVIDER: 'gmail' })).toBe('gmail')
-    expect(detectProvider({ MAIL_PROVIDER: 'IMAP' })).toBe('imap')
-    expect(detectProvider({ IMAP_HOST: 'imap.example.com' })).toBe('imap')
-    expect(
-      detectProvider({
-        GMAIL_OAUTH_CLIENT_ID: 'id',
-        GMAIL_OAUTH_CLIENT_SECRET: 'secret',
-        GMAIL_OAUTH_REFRESH_TOKEN: 'token',
-      }),
-    ).toBe('gmail')
-    expect(detectProvider({ GMAIL_SERVICE_ACCOUNT_JSON: '{}' })).toBe('gmail')
-    expect(() => detectProvider({ MAIL_PROVIDER: 'exchange' })).toThrow(MailConfigError)
+    expect(detectProvider({ MAIL_PASSWORD: '   ' })).toBe('fake')
+    expect(detectProvider({ MAIL_PASSWORD: 'pw' })).toBe('imap')
   })
 
-  it('validates the credentials of the selected provider', () => {
-    expect(() => mailConfigFromEnv({ MAIL_PROVIDER: 'gmail' })).toThrow(/GMAIL_OAUTH_CLIENT_ID/)
-    expect(() =>
-      mailConfigFromEnv({
-        MAIL_PROVIDER: 'imap',
-        IMAP_HOST: 'h',
-        IMAP_USER: 'u',
-        IMAP_PASSWORD: 'p',
-      }),
-    ).toThrow(/SMTP_HOST/)
-    const imap = mailConfigFromEnv({
-      MAIL_PROVIDER: 'imap',
-      IMAP_HOST: 'imap.example.com',
-      IMAP_USER: 'support@instaradar.app',
-      IMAP_PASSWORD: 'pw',
-      SMTP_HOST: 'smtp.example.com',
-      SMTP_PORT: '587',
-    })
-    expect(imap.imap).toMatchObject({ port: 993, secure: true, sentFolder: null, appendSent: true })
-    expect(imap.smtp).toMatchObject({
-      host: 'smtp.example.com',
-      port: 587,
-      secure: false,
+  it('fixes the mailbox, its hosts and the knobs in code; only the password comes from the environment', () => {
+    const imap = mailConfigFromEnv({ MAIL_PASSWORD: 'pw' })
+    expect(imap.provider).toBe('imap')
+    expect(imap.mailbox).toBe('support@instaradar.app')
+    expect(imap.fromName).toBe('InstaRadar Support')
+    expect(imap.imap).toEqual({
+      host: 'mail.privateemail.com',
+      port: 993,
+      secure: true,
       user: 'support@instaradar.app',
+      password: 'pw',
+      sentFolder: null,
+      appendSent: true,
     })
-    const fake = mailConfigFromEnv({
-      SUPPORT_MAILBOX: 'Support@InstaRadar.app',
-      MAIL_FETCH_LIMIT: '7',
+    expect(imap.smtp).toEqual({
+      host: 'mail.privateemail.com',
+      port: 465,
+      secure: true,
+      user: 'support@instaradar.app',
+      password: 'pw',
     })
+    const fake = mailConfigFromEnv({})
     expect(fake).toMatchObject({
       provider: 'fake',
       mailbox: 'support@instaradar.app',
-      fetchLimit: 7,
+      notifyEmail: 'phillip.mohr97@gmail.com',
+      fetchLimit: 50,
       bootstrapDays: 1,
+      stuckSendMinutes: 5,
+      imap: null,
+      smtp: null,
     })
   })
 
@@ -68,25 +55,7 @@ describe('provider selection', () => {
     expect(createMailProvider(mailConfigFromEnv({ MAIL_FAKE_DIR: '/tmp/x' }))).toBeInstanceOf(
       DirectoryMailProvider,
     )
-    const gmail = createMailProvider(
-      mailConfigFromEnv({
-        MAIL_PROVIDER: 'gmail',
-        GMAIL_OAUTH_CLIENT_ID: 'id',
-        GMAIL_OAUTH_CLIENT_SECRET: 'secret',
-        GMAIL_OAUTH_REFRESH_TOKEN: 'token',
-      }),
-    )
-    expect(gmail.kind).toBe('gmail')
-    const imap = createMailProvider(
-      mailConfigFromEnv({
-        MAIL_PROVIDER: 'imap',
-        IMAP_HOST: 'imap.example.com',
-        IMAP_USER: 'u',
-        IMAP_PASSWORD: 'p',
-        SMTP_HOST: 'smtp.example.com',
-      }),
-    )
-    expect(imap.kind).toBe('imap')
+    expect(createMailProvider(mailConfigFromEnv({ MAIL_PASSWORD: 'p' })).kind).toBe('imap')
   })
 })
 

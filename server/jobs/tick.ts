@@ -5,19 +5,14 @@
  *  - fetch-mail: every minute, fetch_mail only, so a long agent run never delays inbound mail.
  */
 import type { CronAck } from '#shared/api'
+import { JOBS } from '#shared/config'
 import type { JobType, NotifyFn } from '#shared/services'
 import { services } from '../utils/services'
 import { poolDb, type Db } from './db'
 import { checkHealth } from './health'
 import { claimSlot } from './heartbeats'
 import { JobQueue } from './queue'
-import {
-  defaultLog,
-  DEFAULT_LONG_JOB_RESERVE_MS,
-  runDueJobs,
-  workerId,
-  type RanJob,
-} from './runner'
+import { defaultLog, runDueJobs, workerId, type RanJob } from './runner'
 import { runSchedule } from './schedule'
 
 export interface TickOptions {
@@ -50,11 +45,6 @@ export interface FetchLaneResult extends CronAck {
   worker: string
 }
 
-export function envInt(name: string, fallback: number): number {
-  const v = Number(process.env[name])
-  return Number.isFinite(v) && v > 0 ? v : fallback
-}
-
 function resolve(opts: TickOptions) {
   return {
     db: opts.db ?? poolDb(),
@@ -67,15 +57,14 @@ function resolve(opts: TickOptions) {
 
 export async function runTick(opts: TickOptions = {}): Promise<TickResult> {
   const { db, now, worker, log, notify } = resolve(opts)
-  const budgetMs = opts.budgetMs ?? envInt('JOBS_TICK_BUDGET_MS', 270_000)
+  const budgetMs = opts.budgetMs ?? JOBS.tickBudgetMs
   const t0 = Date.now()
   const schedule = await runSchedule(db, { now })
   const jobs = await runDueJobs({
     db,
     worker,
     budgetMs: budgetMs - (Date.now() - t0),
-    longJobReserveMs:
-      opts.longJobReserveMs ?? envInt('JOBS_LONG_JOB_RESERVE_MS', DEFAULT_LONG_JOB_RESERVE_MS),
+    longJobReserveMs: opts.longJobReserveMs ?? JOBS.longJobReserveMs,
     notify,
     log,
   })
@@ -96,7 +85,7 @@ export async function runTick(opts: TickOptions = {}): Promise<TickResult> {
 
 export async function runFetchMailLane(opts: TickOptions = {}): Promise<FetchLaneResult> {
   const { db, now, worker, log, notify } = resolve(opts)
-  const budgetMs = opts.budgetMs ?? envInt('JOBS_FETCH_LANE_BUDGET_MS', 50_000)
+  const budgetMs = opts.budgetMs ?? JOBS.fetchLaneBudgetMs
   const t0 = Date.now()
   const schedule = await runSchedule(db, { now, only: ['fetch_mail'] })
   const jobs = await runDueJobs({

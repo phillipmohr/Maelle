@@ -34,7 +34,4 @@ export const unconfiguredInstaradar = () =>
 export const unconfiguredLinear = () =>
   unconfigured<LinearWriteClient>('Linear', 'LINEAR_WRITE_API_KEY')
 export const unconfiguredAuthAdmin = () =>
-  unconfigured<AuthAdminClient>(
-    'Supabase',
-    'INSTARADAR_SUPABASE_URL / INSTARADAR_SUPABASE_SERVICE_ROLE_KEY',
-  )
+  unconfigured<AuthAdminClient>('Supabase', 'INSTARADAR_SUPABASE_SERVICE_ROLE_KEY')

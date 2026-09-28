@@ -5,7 +5,9 @@
  */
 import type { AutonomyUpdateRequest, SettingsRow } from '#shared/api'
 import { UNDO_WINDOW_OPTIONS } from '#shared/autonomy'
+import { OWNER } from '#shared/config'
 
+const defaultNotifyEmail = OWNER.notifyEmail
 const props = defineProps<{ settings: SettingsRow; busy?: boolean }>()
 const emit = defineEmits<{ update: [patch: AutonomyUpdateRequest] }>()
 
@@ -116,7 +118,7 @@ function commitNotifyEmail() {
         <Input
           v-model="notifyEmail"
           type="email"
-          placeholder="NOTIFY_EMAIL from .env"
+          :placeholder="`${defaultNotifyEmail} (default)`"
           :disabled="busy"
           class="h-[30px] w-[220px] font-mono text-caption"
           @blur="commitNotifyEmail"

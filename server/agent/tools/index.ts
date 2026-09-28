@@ -48,6 +48,8 @@ export function createToolsFromEnv(
   config: AgentRuntimeConfig = agentRuntimeConfig(),
   deps: {
     dbQuery?: <T extends Record<string, unknown>>(text: string, params: unknown[]) => Promise<T[]>
+    /** Read the `vercel_logs` drain table instead of the Vercel API (needs `dbQuery`). */
+    vercelLogsFromDrain?: boolean
   } = {},
 ): AgentTools {
   const stripe = config.stripeReadKey
@@ -65,7 +67,7 @@ export function createToolsFromEnv(
         'retrieve',
       ])
   const instaradar = config.instaradarDbReadUrl
-    ? createInstaradarReadClient(config.instaradarDbReadUrl, config.instaradarTables)
+    ? createInstaradarReadClient(config.instaradarDbReadUrl)
     : unconfigured<InstaradarReadClient>('InstaRadar database', [
         'findUserByEmail',
         'listTrackedProfiles',
@@ -75,15 +77,17 @@ export function createToolsFromEnv(
         'lookupProfile',
         'select',
       ])
+  // The log drain adapter (`createLogDrainLogsClient`, table `vercel_logs`) is available when the
+  // API window turns out to be too short; pass `deps.dbQuery` and switch here.
   let vercel: VercelLogsClient
-  if (config.vercelLogsSource === 'drain' && deps.dbQuery) {
-    vercel = createLogDrainLogsClient(deps.dbQuery)
-  } else if (config.vercelApiToken && config.vercelInstaradarProjectId) {
+  if (config.vercelApiToken) {
     vercel = createVercelApiLogsClient({
       token: config.vercelApiToken,
-      projectId: config.vercelInstaradarProjectId,
-      teamId: config.vercelTeamId || undefined,
+      teamSlug: config.vercelTeamSlug,
+      project: config.vercelProject,
     })
+  } else if (deps.dbQuery && deps.vercelLogsFromDrain) {
+    vercel = createLogDrainLogsClient(deps.dbQuery)
   } else {
     vercel = unconfigured<VercelLogsClient>('Vercel logs', ['search'])
   }
