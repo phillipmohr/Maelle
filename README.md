@@ -176,6 +176,25 @@ Vercel logs, Notion, Linear) and can be added later; until then that source is r
 unavailable and that action says "not configured". Cron schedules are in `vercel.json`
 (see `docs/adr/001-jobs.md`).
 
+### Database migrations on deploy
+
+Every push to `main` runs `.github/workflows/cd-prod.yaml`, which calls the reusable
+`.github/workflows/deploy.yaml` (same pipeline as InstaRadar): it links the Supabase CLI to the
+production project and runs `supabase db push`, applying the pending files in `supabase/migrations`.
+`pnpm db:migrate` records applied migrations in the same `supabase_migrations.schema_migrations` table
+the CLI uses, so the two never re-apply each other's work. The workflow needs three repository secrets
+(GitHub → Settings → Secrets and variables → Actions):
+
+| Secret                      | Value                                                                 |
+| --------------------------- | --------------------------------------------------------------------- |
+| `SUPABASE_CLI_TOKEN`        | Personal access token (Supabase dashboard → Account → Access Tokens)  |
+| `SUPABASE_PROD_REF`         | Project ref of Maelle's Supabase project (Project Settings → General) |
+| `SUPABASE_PROD_DB_PASSWORD` | The project's database password                                       |
+
+`supabase db push` only applies SQL; the one-time allow-listing of `OWNER.email` that
+`pnpm db:migrate` does is not part of it, so run `pnpm db:migrate` once against the production URL
+(or insert the row into `allowed_users` by hand) before the first sign-in.
+
 ## IRDR-459: Autonomy, activity log, playbook, notifications, learning loop
 
 Owner folders: `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`,

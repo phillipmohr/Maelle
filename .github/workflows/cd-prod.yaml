@@ -1,0 +1,21 @@
+name: Continuous Deployment - Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy changes to production
+    uses: ./.github/workflows/deploy.yaml
+    with:
+      environment: 'production'
+    secrets:
+      token: ${{ secrets.SUPABASE_CLI_TOKEN }}
+      project-ref: ${{ secrets.SUPABASE_PROD_REF }}
+      db-password: ${{ secrets.SUPABASE_PROD_DB_PASSWORD }}
