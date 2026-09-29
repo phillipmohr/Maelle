@@ -133,6 +133,7 @@ const barNote = computed(() => {
 })
 
 const composer = ref<{ submit: () => void } | null>(null)
+const detailScroll = ref<HTMLElement | null>(null)
 function viewLog() {
   document.getElementById('audit-trail')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -329,6 +330,7 @@ watch(currentNumber, () => {
 
     <div
       v-if="detail && ticket"
+      ref="detailScroll"
       class="grid flex-1 auto-rows-max grid-cols-[minmax(0,1fr)] content-start gap-6 overflow-auto px-8 pb-9 pt-[22px]"
     >
       <TicketHeader
@@ -341,6 +343,8 @@ watch(currentNumber, () => {
         :case-editable="view !== 'closed' && view !== 'executing'"
         @set-case="onPickCase"
       />
+
+      <TicketSectionNav :container="detailScroll" />
 
       <RiskBanner
         v-if="ticket.riskLevel !== 'none' && riskReason && view !== 'closed'"

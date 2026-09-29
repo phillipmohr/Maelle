@@ -76,7 +76,7 @@ const rows = computed<Row[]>(() => {
 </script>
 
 <template>
-  <Panel id="audit-trail" as="section" aria-label="Audit trail" class="scroll-mt-4">
+  <Panel id="audit-trail" as="section" aria-label="Audit trail" class="scroll-mt-14">
     <PanelHeader title="Audit trail" :meta="`${rows.length} entries`" eyebrow />
     <div class="divide-hairline">
       <div

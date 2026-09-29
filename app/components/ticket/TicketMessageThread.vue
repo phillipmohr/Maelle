@@ -69,7 +69,12 @@ function toggleTranslation(m: MessageRow) {
 </script>
 
 <template>
-  <section v-if="latest" class="flex flex-col gap-[10px]" aria-label="Customer message">
+  <section
+    v-if="latest"
+    class="flex flex-col gap-[10px]"
+    aria-label="Customer message"
+    data-nav-label="Message"
+  >
     <div class="flex items-baseline justify-between gap-3">
       <Eyebrow as="h2">{{
         latest.direction === 'in' ? 'Customer message' : 'Last message'

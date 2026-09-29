@@ -12,6 +12,7 @@ import { CASE_1_CANCELLATION, CASE_2_REFUND } from '../../../evals/fixtures/case
 import type { Fixture } from '../../../evals/fixtures/types'
 import { NOW, SUPPORT } from '../../../evals/fixtures/worlds'
 import { checkExpectations, harnessDeps, scriptedTurns } from '../../../evals/harness'
+import { MODELS } from '../../../shared/config'
 import { SEED_APP_ID } from '../../../shared/seed/data'
 
 const url = process.env.TEST_DATABASE_URL
@@ -124,7 +125,7 @@ describe.skipIf(!url)('agent runs against Postgres', () => {
       status: 'succeeded',
       error: null,
       proposal_id: proposal!.id,
-      model: 'claude-fable-5-1',
+      model: MODELS.agent,
       job_id: `job-${ticketId}`,
       attempt: 1,
     })

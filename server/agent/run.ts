@@ -274,6 +274,8 @@ export async function runAgent(
       },
       usage: deps.usage ?? null,
       callMeta: { ticketId, runId, attempt: start.attempt },
+      effort: config.effort,
+      researchNudgeTurn: config.researchNudgeTurn,
       log,
     })
 

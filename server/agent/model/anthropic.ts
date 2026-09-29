@@ -1,8 +1,8 @@
 /**
  * Anthropic SDK adapter. Constructed only when ANTHROPIC_API_KEY is set. Streams under the hood
- * (`messages.stream(...).finalMessage()`) so long Fable turns never hit the HTTP timeout, and returns
- * the complete `Message` to the loop. Thinking stays at the model default (always on for Fable),
- * so no `thinking` parameter is sent.
+ * (`messages.stream(...).finalMessage()`) so long turns never hit the HTTP timeout, and returns the
+ * complete `Message` to the loop. Thinking stays at the model default (adaptive); the callers set
+ * `output_config.effort` instead of a `thinking` parameter.
  */
 import Anthropic from '@anthropic-ai/sdk'
 import type { ModelClient, ModelRequest, ModelResponse } from './types'

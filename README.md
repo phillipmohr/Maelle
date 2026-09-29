@@ -257,7 +257,7 @@ everything since the last sent digest: handled automatically, needs a decision, 
 - Notion writes go through `NotionWriter` (`server/learning/notion-writer.ts`): the real adapter uses
   `NOTION_TOKEN`, the in-memory fake serves tests and every environment without
   the token. Claude calls go through `ModelClient` (`ANTHROPIC_API_KEY`, model `MODELS.small`, i.e.
-  `claude-sonnet-5`) with a deterministic fallback (first sentences of the reply).
+  `claude-sonnet-5-5`, low effort) with a deterministic fallback (first sentences of the reply).
 - `POST /api/learning/example { ticketId }`: Draft page in the Examples DB (Name, Category, Customer
   message, Response, Status Draft). `POST /api/learning/kb-draft { ticketId }`: Draft page in the
   Knowledge Base (Name, Category, Type, Customer phrasing, Short answer, App InstaRadar, Status Draft,
@@ -448,10 +448,15 @@ registers the `agent_run` job handler):
    Business plan) in code.
 4. **Claude tool-use loop** (`loop.ts`, `prompt.ts`, `tools/definitions.ts`): system prompt from the
    Notion protocol, the 17 templates, the examples, the knowledge base and the action registry
-   (cached with `cache_control`); user message with the thread, the research bundle, the facts and
-   hints. Read-only tools: `stripe_events`, `stripe_search_customers`, `stripe_retrieve`,
-   `instaradar_select` (one guarded SELECT), `instaradar_profile`, `vercel_logs`, `linear_search`,
-   `notion_page`, `email_history`. Output only through `submit_proposal`.
+   (cached with `cache_control` across runs); user message with the thread, the research bundle,
+   the facts and hints. The whole conversation is cached turn by turn (top-level `cache_control`),
+   thinking depth is `AGENT.effort` (medium), and the prompt asks the model to submit routine cases
+   without research and to make every needed tool call in one turn; from `AGENT.researchNudgeTurn`
+   on, the tool results carry a nudge to submit with what is known (IRDR-463). Read-only tools:
+   `stripe_events`, `stripe_search_customers`, `stripe_retrieve`, `instaradar_select` (one guarded
+   SELECT), `instaradar_profile`, `vercel_logs`, `linear_search`, `notion_page`, `email_history`;
+   results are cut at 12K characters because every later turn reads them again. Output only
+   through `submit_proposal`.
 5. `finalize.ts` owns what must not depend on the model: the confirmation stage
    (`customerConfirmationNeeded` follows the template plus the detected answer in the thread),
    the risk floor (safety for removal requests, high for chargebacks, open disputes, legal threats
@@ -493,7 +498,7 @@ is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it
 | Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_API_KEY`                                                  |
 | Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_TOKEN`                                                    |
 | Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                              |
-| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-fable-5-1`), consistency check `MODELS.small` (`claude-sonnet-5`)                                                                             | `ANTHROPIC_API_KEY`                                               |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-sonnet-5-5`, `AGENT.effort` medium), consistency check `MODELS.small` (`claude-sonnet-5-5`, low effort)                                       | `ANTHROPIC_API_KEY`                                               |
 
 Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
 Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by
@@ -617,7 +622,8 @@ job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`
   carries `In-Reply-To`/`References` of the latest customer mail, the thread's subject with `Re:`,
   plain text plus simple HTML, and attachments from Storage. `services.mail.sendSystemEmail(to,
 subject, body)` goes to `OWNER.notifyEmail` when `to` is empty. Every reply gets Anastasia's
-  signature (`MAILBOX.signature`) appended when it is sent; drafts carry no sign-off.
+  signature (`MAILBOX.signature`) appended when it is sent, with her photo inline in the HTML part
+  (`server/mail/signature-photo.ts`); drafts carry no sign-off.
 - Follow-ups: `shared/follow-up.ts` `followUpKindDue()` decides between `follow_up` (after
   `settings.follow_up_days`) and `auto_close` (after `settings.auto_close_days`), counted from our
   first reply after the customer's last message. The agent can read the latest
@@ -630,7 +636,7 @@ subject, body)` goes to `OWNER.notifyEmail` when `to` is empty. Every reply gets
 
 support@instaradar.app is hosted on Namecheap Private Email: IMAP `mail.privateemail.com:993` in,
 SMTP `mail.privateemail.com:465` out, login is the address. Hosts, ports, the sender name
-("InstaRadar Support") and the signature are fixed in `shared/config.ts` (`MAILBOX`); the one secret
+("Anastasia at InstaRadar") and the signature are fixed in `shared/config.ts` (`MAILBOX`); the one secret
 is `MAIL_PASSWORD`, the mailbox password used for both. The cursor is the INBOX UID; sent mail is
 appended to the Sent folder (found through the `\Sent` special-use flag), so replies show up in
 Apple Mail like any other. Without `MAIL_PASSWORD` the in-memory fake is used, which is also what
@@ -668,7 +674,7 @@ live fetch state and three actions:
   dies is simply run again. A customer who writes to an imported thread reopens it the normal way.
 - **Classify** (`POST /api/mail/classify-imported`, `server/mail/history-classify.ts`) gives imported
   tickets a case without drafting or executing anything: one short call per ticket on
-  `MODELS.classify` (`claude-opus-5-5`, low effort, JSON schema, the same `unclear` threshold as
+  `MODELS.classify` (`claude-sonnet-5-5`, low effort, JSON schema, the same `unclear` threshold as
   the agent), in `classify_imported` chunk jobs. It starts by itself when an import finishes and
   needs `ANTHROPIC_API_KEY`; attempts per ticket live in `ticket_classifications`, and after three
   failures a ticket is left without a case instead of retrying forever.

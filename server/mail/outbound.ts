@@ -10,7 +10,15 @@ import type { ReplyDraft } from '#shared/proposal'
 import type { SentMail } from '#shared/services'
 import type { Db } from '../jobs/db'
 import { errorMessage } from '../jobs/types'
-import { buildMime, newMessageId, replySubject, textToHtml, withSignature } from './compose'
+import {
+  buildMime,
+  newMessageId,
+  replyHtml,
+  replySubject,
+  signaturePhotoAttachment,
+  textToHtml,
+  withSignature,
+} from './compose'
 import { MailConfigError, mailboxDomain } from './config'
 import type { MailContext } from './context'
 import { normalizeSubject } from './threading'
@@ -185,7 +193,7 @@ export async function sendReply(
     ...(cc.length ? { cc } : {}),
     subject,
     text,
-    html: textToHtml(text),
+    html: replyHtml(draft.body),
     messageId: rfcMessageId,
     inReplyTo: latestIn?.message_id ?? null,
     references,
@@ -194,7 +202,10 @@ export async function sendReply(
   }
   let sent: SendResult | null = null
   try {
-    mail.attachments = await loadAttachments(ctx, draft.attachments)
+    mail.attachments = [
+      signaturePhotoAttachment(),
+      ...(await loadAttachments(ctx, draft.attachments)),
+    ]
     // Taking over a stale row: the previous worker may have sent and died before recording.
     if (acquired.takeover) sent = await provider.findSentByRfcMessageId(rfcMessageId)
     if (!sent) sent = await provider.send(mail)

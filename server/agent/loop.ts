@@ -3,6 +3,11 @@
  * Validation issues go back to the model as tool errors; after three rejected submissions (or three
  * turns without a submission) the run fails with a readable error.
  *
+ * Cost (IRDR-463): `output_config.effort` is set explicitly (the model default would be high), the
+ * whole conversation is cached with the top-level `cache_control` (every turn reads the previous
+ * turns from the cache; the system prompt keeps its own breakpoint so it also hits across runs),
+ * and from `researchNudgeTurn` on the tool results carry a nudge to submit with what is known.
+ *
  * Usage: every turn is one `model_calls` row and every tool call one `agent_tool_calls` row
  * (through the usage sink, IRDR-460). The context a tool result adds is measured on the next turn:
  * the growth of the input tokens minus the previous output, split by result size when several
@@ -10,6 +15,7 @@
  * the loop fails later.
  */
 import type Anthropic from '@anthropic-ai/sdk'
+import type { Effort } from '#shared/config'
 import type { Proposal } from '#shared/proposal'
 import { addCost, contextTokens, costUsd, type TokenUsage } from '#shared/pricing'
 import { estimateContextTokens } from '#shared/usage'
@@ -26,6 +32,11 @@ import { newCallId, trackModelCall } from '../usage/record'
 import type { ToolCallRecord, UsageSink } from '../usage/types'
 
 export const MAX_SUBMISSION_FAILURES = 3
+
+/** Appended to the tool results from `researchNudgeTurn` on. */
+export function researchNudge(turn: number, maxIterations: number): string {
+  return `Research budget: this was research turn ${turn} of at most ${maxIterations}. Call submit_proposal now with what you know. Only if one specific fact that an action or the reply needs is still missing, fetch exactly that in a single turn and then submit.`
+}
 
 export class AgentLoopError extends Error {
   readonly issues: string[]
@@ -65,6 +76,10 @@ export interface LoopArgs {
   /** Where the per-call and per-tool rows go; null records nothing. */
   usage?: UsageSink | null
   callMeta?: LoopCallMeta
+  /** Thinking depth (`output_config.effort`); omitted means the model default. */
+  effort?: Effort
+  /** First turn whose tool results carry the research nudge; null or 0 disables it. */
+  researchNudgeTurn?: number | null
   log?: (msg: string, data?: unknown) => void
 }
 
@@ -165,9 +180,13 @@ export async function runToolLoop(args: LoopArgs): Promise<LoopResult> {
         args.model.create({
           model: args.modelId,
           max_tokens: 16_000,
+          // Automatic caching of the conversation prefix: each turn reads the earlier turns from
+          // the cache; the explicit breakpoint keeps the system prompt cached across runs too.
+          cache_control: { type: 'ephemeral' },
           system: [{ type: 'text', text: args.system, cache_control: { type: 'ephemeral' } }],
           tools: args.tools,
           tool_choice: { type: 'auto' },
+          ...(args.effort ? { output_config: { effort: args.effort } } : {}),
           messages,
         }),
       args.log,
@@ -292,7 +311,11 @@ export async function runToolLoop(args: LoopArgs): Promise<LoopResult> {
       })
     }
     await recordTools(toolRows)
-    messages.push({ role: 'user', content: results })
+    const nudge =
+      !final && args.researchNudgeTurn && turn >= args.researchNudgeTurn
+        ? [{ type: 'text' as const, text: researchNudge(turn, args.maxIterations) }]
+        : []
+    messages.push({ role: 'user', content: [...results, ...nudge] })
     if (final) return final
     // The results just pushed are read by the next turn; its input growth measures their size.
     pending = {

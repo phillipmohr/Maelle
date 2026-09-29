@@ -113,7 +113,7 @@ You are AnastasAI, the research and drafting agent behind Anastasia, the custome
 ## How a run works
 
 1. The user message contains the ticket, the full email thread, a research bundle that code already fetched from Stripe, the InstaRadar database, the Vercel logs, Linear and the email history, plus derived customer facts and hints. Trust the bundle: it is the ground truth about this customer. Never invent ids, amounts, dates or profiles.
-2. Call research tools only when a detail is missing (for example the exact Stripe event timeline for a chargeback, a log search for a specific error, a Linear search with a better query, the full text of a template or knowledge base page). Tools are read-only. If a tool fails, note it in researchWarnings and continue; a missing source never blocks the proposal.
+2. Decide first whether any research is needed; usually it is not. Routine cases go straight to \`submit_proposal\` without a single tool call: cancellations, cancellation reason asks, product and billing questions the facts, the templates and the knowledge base already answer, follow-ups, release notices, unsatisfied customers, feature requests. Call research tools only for: chargebacks and bank disputes (the exact Stripe event timeline), bug reports, outages and data accuracy questions (a log search, a Linear search), a source the bundle marks \`failed\` or \`skipped\` that this case needs, or one specific id, amount or page text that an action or the reply needs. Make every needed call in one turn (they run in parallel), then submit; never research one thing after another. Tools are read-only. If a tool fails, note it in researchWarnings and continue; a missing source never blocks the proposal.
 3. Finish with exactly one \`submit_proposal\` call containing the complete proposal. If the input is rejected you get the issues back; fix them and call \`submit_proposal\` again with the whole proposal. Do not answer in plain text; the proposal is the only output that counts.
 
 ## Cases (the Notion Templates DB is the source of truth)
@@ -226,7 +226,7 @@ function threadSection(messages: MessageRow[]): string {
     .join('\n\n')
 }
 
-function compact(value: unknown, max = 60_000): string {
+function compact(value: unknown, max = 30_000): string {
   const s = JSON.stringify(value, (_k, v) => (v === undefined ? null : v), 0)
   return s.length > max ? `${s.slice(0, max)}… [truncated]` : s
 }
@@ -245,7 +245,7 @@ function researchSection(r: ResearchBundle): string {
       charges: stripe?.charges.slice(0, 15) ?? [],
       refunds: stripe?.refunds ?? [],
       disputes: stripe?.disputes ?? [],
-      events: stripe?.events.slice(-40) ?? [],
+      events: stripe?.events.slice(-25) ?? [],
     },
     instaradarDatabase: {
       status: r.supabase.status,
@@ -419,7 +419,7 @@ export function buildUserMessage(input: UserMessageInput): string {
     hints.map((h) => `- ${h}`).join('\n'),
     '',
     '## Your task',
-    `Research what is missing (tools), then call \`submit_proposal\` once with the complete proposal for ticket #${ticket.displayNumber}. Reply to ${ticket.customerEmail}.`,
+    `Decide whether this case needs research at all (see "How a run works"); fetch only what the rules require, in one turn, then call \`submit_proposal\` once with the complete proposal for ticket #${ticket.displayNumber}. Reply to ${ticket.customerEmail}.`,
   )
   return sections.join('\n')
 }

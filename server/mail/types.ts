@@ -69,6 +69,8 @@ export interface OutgoingAttachment {
   filename: string
   content: Buffer
   contentType?: string
+  /** Content-ID for an inline image referenced as `cid:` from the HTML part. */
+  cid?: string
 }
 
 export interface OutgoingMail {

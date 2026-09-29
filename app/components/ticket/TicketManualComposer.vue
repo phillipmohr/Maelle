@@ -106,7 +106,7 @@ defineExpose({ submit, canSend })
 </script>
 
 <template>
-  <section class="flex flex-col gap-[10px]" aria-label="Your reply">
+  <section class="flex flex-col gap-[10px]" aria-label="Your reply" data-nav-label="Reply">
     <div class="flex items-baseline justify-between gap-3">
       <Eyebrow as="h2">Your reply</Eyebrow>
       <Mono class="text-[11px]"

@@ -10,7 +10,7 @@
  * `process.env` is used instead of `useRuntimeConfig()` so the same module runs inside Nitro,
  * in vitest and in the eval runner.
  */
-import { AGENT, INSTARADAR, LINEAR, MAILBOX, MODELS } from '#shared/config'
+import { AGENT, INSTARADAR, LINEAR, MAILBOX, MODELS, type Effort } from '#shared/config'
 
 export interface AgentRuntimeConfig {
   /** Claude API key (agent research + drafting). */
@@ -36,6 +36,10 @@ export interface AgentRuntimeConfig {
   siteUrl: string
   /** Maximum model round trips per run. */
   maxIterations: number
+  /** Thinking depth of the agent run. */
+  effort: Effort
+  /** First turn whose tool results ask the model to submit unless a specific fact is missing. */
+  researchNudgeTurn: number
   /** Per-source timeout while researching (ms). */
   sourceTimeoutMs: number
   /** How long the Notion knowledge stays cached in the process (ms). */
@@ -69,6 +73,8 @@ export function agentRuntimeConfig(env: NodeJS.ProcessEnv = process.env): AgentR
     supportMailbox: MAILBOX.address,
     siteUrl: siteUrlFromEnv(env),
     maxIterations: AGENT.maxIterations,
+    effort: AGENT.effort,
+    researchNudgeTurn: AGENT.researchNudgeTurn,
     sourceTimeoutMs: AGENT.sourceTimeoutMs,
     knowledgeCacheTtlMs: AGENT.knowledgeCacheTtlMs,
   }

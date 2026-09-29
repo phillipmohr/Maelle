@@ -469,7 +469,8 @@ export function createTicketDecision(
   function scheduleCheck() {
     if (checkUnavailable.value || !ticket.value) return
     if (checkTimer) clearTimeout(checkTimer)
-    const delay = deps.checkDelay ?? 800
+    // Two seconds of quiet before the model check: every check is a Claude call (IRDR-463).
+    const delay = deps.checkDelay ?? 2000
     const go = async () => {
       checkTimer = null
       if (!dirty.value) {

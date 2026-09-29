@@ -51,7 +51,7 @@ describe.skipIf(!url)('outbound mail', () => {
         messageId: sent.rfcMessageId,
       })
       expect(mail.from).toEqual({
-        name: 'InstaRadar Support',
+        name: 'Anastasia at InstaRadar',
         address: 'support@instaradar.app',
       })
       const parsed = await parseMail(ctx.provider.sent[0]!.raw)
@@ -60,6 +60,11 @@ describe.skipIf(!url)('outbound mail', () => {
       expect(parsed.text).toContain('-- \nBest wishes,\nAnastasia\nCustomer Care · InstaRadar')
       expect(parsed.html).toContain('<p>Hi, thanks for reaching out!</p>')
       expect(parsed.html).toContain('Customer Care · InstaRadar')
+      // Anastasia's photo rides along as an inline image referenced from the HTML signature.
+      expect(parsed.html).toContain('src="cid:anastasia-photo@instaradar.app"')
+      expect(parsed.attachments.filter((a) => a.inline).map((a) => a.filename)).toEqual([
+        'anastasia.jpg',
+      ])
       expect(parsed.inReplyTo).toBe('<multipart-001@mail.example.com>')
 
       const row = await db.one<Record<string, unknown>>(
@@ -221,7 +226,9 @@ describe.skipIf(!url)('outbound mail', () => {
       })
       await sendReply(ctx, ticketId, withFile, { idempotencyKey: 'a1' })
       const parsed = await parseMail(ctx.provider.sent[0]!.raw)
-      expect(parsed.attachments.map((a) => a.filename)).toEqual(['refund.pdf'])
+      expect(parsed.attachments.filter((a) => !a.inline).map((a) => a.filename)).toEqual([
+        'refund.pdf',
+      ])
 
       const missing = draft('tom.becker@example.com', {
         attachments: [
