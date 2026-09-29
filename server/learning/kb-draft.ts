@@ -65,6 +65,7 @@ export async function buildKbDraftPage(
   now: Date = new Date(),
 ): Promise<{ page: NotionPageInput; condensation: KbCondensation }> {
   const condensation = await model.condenseKnowledge({
+    ticketId: ctx.ticket.id,
     subject: ctx.ticket.subject,
     caseLabel: ctx.ticket.caseType ? caseLabel(ctx.ticket.caseType) : 'Unclassified',
     customerMessage: ctx.customerMessage,

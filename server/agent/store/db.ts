@@ -167,7 +167,8 @@ export function createDbAgentStore(): AgentStore {
     async finishRun(runId, f) {
       await dbQuery(
         `update public.agent_runs set status = $2, error = $3, proposal_id = coalesce($4::uuid, proposal_id),
-           finished_at = now(), duration_ms = $5, input_tokens = $6, output_tokens = $7 where id = $1`,
+           finished_at = now(), duration_ms = $5, input_tokens = $6, output_tokens = $7,
+           cache_read_tokens = $8, cache_creation_tokens = $9, cost_usd = $10 where id = $1`,
         [
           runId,
           f.status,
@@ -176,6 +177,9 @@ export function createDbAgentStore(): AgentStore {
           Math.round(f.durationMs),
           f.inputTokens ?? null,
           f.outputTokens ?? null,
+          f.cacheReadTokens ?? null,
+          f.cacheCreationTokens ?? null,
+          f.costUsd ?? null,
         ],
       )
     },

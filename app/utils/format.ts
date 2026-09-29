@@ -58,3 +58,46 @@ export function money(cents: number, currency = 'usd'): string {
 export function plural(n: number, word: string, pluralWord = `${word}s`): string {
   return `${n} ${n === 1 ? word : pluralWord}`
 }
+
+/** "$0.42", "$12.30", "$0.004" for tiny amounts; "–" when the price is unknown. */
+export function formatCost(
+  usd: number | null | undefined,
+  opts: { compact?: boolean } = {},
+): string {
+  if (usd == null) return '–'
+  if (usd === 0) return '$0.00'
+  if (usd < 0.01) return `$${usd.toFixed(3)}`
+  if (opts.compact && usd >= 1000) return `$${(usd / 1000).toFixed(1)}K`
+  return `$${usd.toFixed(2)}`
+}
+
+/** "18,400" in tables; compact "18.4K" / "1.2M" on tiles and chips. */
+export function formatTokens(
+  n: number | null | undefined,
+  opts: { compact?: boolean } = {},
+): string {
+  if (n == null) return '–'
+  if (opts.compact) {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
+    if (n >= 10_000) return `${Math.round(n / 1000)}K`
+    if (n >= 1_000) return `${(n / 1000).toFixed(1)}K`
+    return String(n)
+  }
+  return new Intl.NumberFormat('en-US').format(n)
+}
+
+/** "0.8s", "12s", "1m 05s" */
+export function duration(ms: number | null | undefined): string {
+  if (ms == null) return '–'
+  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`
+  const m = Math.floor(ms / 60_000)
+  const s = Math.round((ms % 60_000) / 1000)
+  return `${m}m ${String(s).padStart(2, '0')}s`
+}
+
+/** "12%" from a 0..1 share. */
+export function percent(share: number | null | undefined): string {
+  if (share == null) return '–'
+  return `${Math.round(share * 100)}%`
+}

@@ -59,13 +59,13 @@ isOneToOne: false
                   ]
                 },"agent_runs": {
                   Row: {
-                    "attempt": number,"created_at": string,"duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"input_tokens": number | null,"job_id": string | null,"model": string | null,"output_tokens": number | null,"progress": NonNullable<Json>,"proposal_id": string | null,"started_at": string | null,"status": string,"ticket_id": string,"trigger": string
+                    "attempt": number,"cache_creation_tokens": number | null,"cache_read_tokens": number | null,"cost_usd": number | null,"created_at": string,"duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"input_tokens": number | null,"job_id": string | null,"model": string | null,"output_tokens": number | null,"progress": NonNullable<Json>,"proposal_id": string | null,"started_at": string | null,"status": string,"ticket_id": string,"trigger": string
                   }
                   Insert: {
-                    "attempt"?: number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id": string,"trigger": string
+                    "attempt"?: number,"cache_creation_tokens"?: number | null,"cache_read_tokens"?: number | null,"cost_usd"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id": string,"trigger": string
                   }
                   Update: {
-                    "attempt"?: number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id"?: string,"trigger"?: string
+                    "attempt"?: number,"cache_creation_tokens"?: number | null,"cache_read_tokens"?: number | null,"cost_usd"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id"?: string,"trigger"?: string
                   }
                   Relationships: [
                     {
@@ -76,6 +76,37 @@ isOneToOne: false
       referencedColumns: ["id"]
     },{
       foreignKeyName: "agent_runs_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"agent_tool_calls": {
+                  Row: {
+                    "context_measured": boolean,"context_tokens": number | null,"created_at": string,"duration_ms": number | null,"id": string,"input": NonNullable<Json>,"model_call_id": string | null,"ok": boolean,"result_chars": number,"run_id": string | null,"source": string | null,"ticket_id": string | null,"tool": string,"turn": number
+                  }
+                  Insert: {
+                    "context_measured"?: boolean,"context_tokens"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"id"?: string,"input"?: NonNullable<Json>,"model_call_id"?: string | null,"ok"?: boolean,"result_chars"?: number,"run_id"?: string | null,"source"?: string | null,"ticket_id"?: string | null,"tool": string,"turn": number
+                  }
+                  Update: {
+                    "context_measured"?: boolean,"context_tokens"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"id"?: string,"input"?: NonNullable<Json>,"model_call_id"?: string | null,"ok"?: boolean,"result_chars"?: number,"run_id"?: string | null,"source"?: string | null,"ticket_id"?: string | null,"tool"?: string,"turn"?: number
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "agent_tool_calls_model_call_id_fkey"
+      columns: ["model_call_id"]
+isOneToOne: false
+      referencedRelation: "model_calls"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_tool_calls_run_id_fkey"
+      columns: ["run_id"]
+isOneToOne: false
+      referencedRelation: "agent_runs"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "agent_tool_calls_ticket_id_fkey"
       columns: ["ticket_id"]
 isOneToOne: false
       referencedRelation: "tickets"
@@ -312,6 +343,31 @@ isOneToOne: false
                   Relationships: [
                     {
       foreignKeyName: "messages_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"model_calls": {
+                  Row: {
+                    "attempt": number | null,"cache_creation_tokens": number,"cache_read_tokens": number,"cost_usd": number | null,"created_at": string,"duration_ms": number | null,"error": string | null,"id": string,"input_tokens": number,"model": string,"output_tokens": number,"purpose": string,"run_id": string | null,"status": string,"stop_reason": string | null,"ticket_id": string | null,"turn": number | null
+                  }
+                  Insert: {
+                    "attempt"?: number | null,"cache_creation_tokens"?: number,"cache_read_tokens"?: number,"cost_usd"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"id"?: string,"input_tokens"?: number,"model": string,"output_tokens"?: number,"purpose": string,"run_id"?: string | null,"status"?: string,"stop_reason"?: string | null,"ticket_id"?: string | null,"turn"?: number | null
+                  }
+                  Update: {
+                    "attempt"?: number | null,"cache_creation_tokens"?: number,"cache_read_tokens"?: number,"cost_usd"?: number | null,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"id"?: string,"input_tokens"?: number,"model"?: string,"output_tokens"?: number,"purpose"?: string,"run_id"?: string | null,"status"?: string,"stop_reason"?: string | null,"ticket_id"?: string | null,"turn"?: number | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "model_calls_run_id_fkey"
+      columns: ["run_id"]
+isOneToOne: false
+      referencedRelation: "agent_runs"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "model_calls_ticket_id_fkey"
       columns: ["ticket_id"]
 isOneToOne: false
       referencedRelation: "tickets"

@@ -25,6 +25,8 @@ import { JobQueue } from '../jobs/queue'
 import { errorMessage } from '../jobs/types'
 import type { MailConfig } from './config'
 import type { MailContext } from './context'
+import { ticketIdOrNull, trackModelCall } from '../usage/record'
+import type { UsageSink } from '../usage/types'
 
 export interface ClassificationMessage {
   direction: 'in' | 'out'
@@ -152,24 +154,32 @@ export function applyThreshold(c: Classification): Classification {
 export function createAnthropicClassifier(opts: {
   apiKey: string
   model?: string
+  /** One `model_calls` row per classification (IRDR-460); null records nothing. */
+  usage?: UsageSink | null
 }): HistoryClassifier {
   const client = new Anthropic({ apiKey: opts.apiKey, timeout: 120_000, maxRetries: 2 })
   const model = opts.model || MODELS.classify
   const system = classificationSystemPrompt()
+  const usage = opts.usage ?? null
   return {
     kind: 'anthropic',
     model,
     async classify(input) {
-      const response = await client.messages.create({
-        model,
-        max_tokens: 1024,
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: classificationUserPrompt(input) }],
-        output_config: {
-          effort: 'low',
-          format: { type: 'json_schema', schema: CLASSIFICATION_JSON_SCHEMA },
-        },
-      })
+      const response = await trackModelCall(
+        usage,
+        { purpose: 'history_classification', model, ticketId: ticketIdOrNull(input.ticketId) },
+        () =>
+          client.messages.create({
+            model,
+            max_tokens: 1024,
+            system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+            messages: [{ role: 'user', content: classificationUserPrompt(input) }],
+            output_config: {
+              effort: 'low',
+              format: { type: 'json_schema', schema: CLASSIFICATION_JSON_SCHEMA },
+            },
+          }),
+      )
       if (response.stop_reason === 'refusal') {
         throw new Error(`model refused (${response.stop_details?.category ?? 'no category'})`)
       }
@@ -211,9 +221,10 @@ export function createFakeClassifier(
 
 export function classifierFromConfig(
   config: Pick<MailConfig, 'anthropicApiKey'>,
+  usage: UsageSink | null = null,
 ): HistoryClassifier | null {
   return config.anthropicApiKey
-    ? createAnthropicClassifier({ apiKey: config.anthropicApiKey })
+    ? createAnthropicClassifier({ apiKey: config.anthropicApiKey, usage })
     : null
 }
 

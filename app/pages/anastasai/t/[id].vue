@@ -410,6 +410,7 @@ watch(currentNumber, () => {
         v-if="proposal"
         :proposal="proposal"
         :runs="detail.runs"
+        :usage="detail.usage ?? null"
         :evidence-open="ticket.riskLevel !== 'none'"
       />
 

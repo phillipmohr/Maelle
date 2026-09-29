@@ -7,6 +7,8 @@ import type { LearningResponse } from '#shared/api'
 import { buildExamplePage } from './examples'
 import { buildKbDraftPage } from './kb-draft'
 import { modelClientFromEnv, type ModelClient } from './model-client'
+import { dbUsageSink } from '../usage/db'
+import { isDbConfigured } from '../utils/db'
 import { notionWriterFromEnv, type CreatedNotionPage, type NotionWriter } from './notion-writer'
 import {
   findLearningEvent,
@@ -42,7 +44,7 @@ export interface LearningDeps {
 export function defaultLearningDeps(): LearningDeps {
   return {
     writer: notionWriterFromEnv(),
-    model: modelClientFromEnv(),
+    model: modelClientFromEnv(process.env, isDbConfigured() ? dbUsageSink() : null),
     loadContext: loadLearningContext,
     findEvent: findLearningEvent,
     recordEvent: recordLearningEvent,

@@ -24,8 +24,12 @@ export interface RunFinish {
   error?: string | null
   proposalId?: string | null
   durationMs: number
+  /** Uncached input tokens of this attempt; the cache kinds and the cost have their own fields. */
   inputTokens?: number | null
   outputTokens?: number | null
+  cacheReadTokens?: number | null
+  cacheCreationTokens?: number | null
+  costUsd?: number | null
 }
 
 export interface TicketFieldsPatch {
