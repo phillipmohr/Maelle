@@ -10,6 +10,8 @@ import { runAgent } from '../../../server/agent/run'
 import { createDbUsageSink } from '../../../server/usage/db'
 import { usageFromDb } from '../../../server/usage/query'
 import { ticketDetailFromDb, type QueryExecutor } from '../../../shared/ticket-repository'
+import { MODELS } from '../../../shared/config'
+import { costUsd } from '../../../shared/pricing'
 import { usageWindow } from '../../../shared/usage'
 import { CASE_1_CANCELLATION } from '../../../evals/fixtures/cases'
 import { NOW, SUPPORT } from '../../../evals/fixtures/worlds'
@@ -17,6 +19,12 @@ import { harnessDeps } from '../../../evals/harness'
 import { SEED_APP_ID } from '../../../shared/seed/data'
 
 const url = process.env.TEST_DATABASE_URL
+const TURN_COST = costUsd(MODELS.agent, {
+  inputTokens: 1000,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+  outputTokens: 200,
+})!
 
 describe.skipIf(!url)('token usage against Postgres', () => {
   let db: pg.Client
@@ -106,7 +114,7 @@ describe.skipIf(!url)('token usage against Postgres', () => {
       output_tokens: 200,
       attempt: 1,
     })
-    expect(calls.rows[0]!.cost_usd).toBeCloseTo(0.02, 6)
+    expect(calls.rows[0]!.cost_usd).toBeCloseTo(TURN_COST, 6)
     const tools = await db.query(
       `select tool, ok, result_chars, context_tokens, context_measured from public.agent_tool_calls where run_id = $1 order by turn, created_at`,
       [result.runId],
@@ -120,13 +128,13 @@ describe.skipIf(!url)('token usage against Postgres', () => {
       input_tokens: 1000 * calls.rows.length,
       cache_read_tokens: 0,
     })
-    expect(run.rows[0]!.cost_usd).toBeCloseTo(0.02 * calls.rows.length, 6)
+    expect(run.rows[0]!.cost_usd).toBeCloseTo(TURN_COST * calls.rows.length, 6)
 
     const detail = await ticketDetailFromDb(exec, ticketId)
     expect(detail!.usage!.totals.calls).toBe(calls.rows.length)
     expect(detail!.usage!.calls[0]!.purpose).toBe('agent_turn')
     expect(detail!.usage!.toolCalls.length).toBe(tools.rows.length)
-    expect(detail!.runs[0]!.costUsd).toBeCloseTo(0.02 * calls.rows.length, 6)
+    expect(detail!.runs[0]!.costUsd).toBeCloseTo(TURN_COST * calls.rows.length, 6)
 
     const usage = await usageFromDb(exec, usageWindow(30, new Date()))
     expect(usage.totals.calls).toBe(before.totals.calls + calls.rows.length)
