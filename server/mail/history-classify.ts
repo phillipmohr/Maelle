@@ -121,11 +121,18 @@ export function trimThread(messages: ClassificationMessage[]): ClassificationMes
   return [first, ...rest]
 }
 
-const CLASSIFICATION_JSON_SCHEMA = {
+/**
+ * Structured-output grammar: no `minimum`/`maximum` on numbers (the API rejects them with a 400),
+ * so the 0 to 1 range is stated in the description and enforced by ClassificationSchema.
+ */
+export const CLASSIFICATION_JSON_SCHEMA = {
   type: 'object',
   properties: {
     caseType: { type: 'string', enum: [...CASE_TYPE_KEYS] },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    confidence: {
+      type: 'number',
+      description: 'Probability between 0 and 1 that caseType is right.',
+    },
     rationale: { type: 'string' },
   },
   required: ['caseType', 'confidence', 'rationale'],
@@ -171,7 +178,10 @@ export function createAnthropicClassifier(opts: {
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('')
-      const parsed = ClassificationSchema.safeParse(JSON.parse(text))
+      const raw = JSON.parse(text) as { confidence?: unknown }
+      if (typeof raw.confidence === 'number')
+        raw.confidence = Math.min(1, Math.max(0, raw.confidence))
+      const parsed = ClassificationSchema.safeParse(raw)
       if (!parsed.success) throw new Error(`model output did not validate: ${parsed.error.message}`)
       return applyThreshold(parsed.data)
     },
