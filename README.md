@@ -563,7 +563,8 @@ job runner drives all scheduled work. Design and reasons: `docs/adr/001-jobs.md`
   carries `In-Reply-To`/`References` of the latest customer mail, the thread's subject with `Re:`,
   plain text plus simple HTML, and attachments from Storage. `services.mail.sendSystemEmail(to,
 subject, body)` goes to `OWNER.notifyEmail` when `to` is empty. Every reply gets Anastasia's
-  signature (`MAILBOX.signature`) appended when it is sent; drafts carry no sign-off.
+  signature (`MAILBOX.signature`) appended when it is sent, with her photo inline in the HTML part
+  (`server/mail/signature-photo.ts`); drafts carry no sign-off.
 - Follow-ups: `shared/follow-up.ts` `followUpKindDue()` decides between `follow_up` (after
   `settings.follow_up_days`) and `auto_close` (after `settings.auto_close_days`), counted from our
   first reply after the customer's last message. The agent can read the latest
@@ -576,7 +577,7 @@ subject, body)` goes to `OWNER.notifyEmail` when `to` is empty. Every reply gets
 
 support@instaradar.app is hosted on Namecheap Private Email: IMAP `mail.privateemail.com:993` in,
 SMTP `mail.privateemail.com:465` out, login is the address. Hosts, ports, the sender name
-("InstaRadar Support") and the signature are fixed in `shared/config.ts` (`MAILBOX`); the one secret
+("Anastasia at InstaRadar") and the signature are fixed in `shared/config.ts` (`MAILBOX`); the one secret
 is `MAIL_PASSWORD`, the mailbox password used for both. The cursor is the INBOX UID; sent mail is
 appended to the Sent folder (found through the `\Sent` special-use flag), so replies show up in
 Apple Mail like any other. Without `MAIL_PASSWORD` the in-memory fake is used, which is also what

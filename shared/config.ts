@@ -29,7 +29,7 @@ export const OWNER = {
 /** The support mailbox: Namecheap Private Email, IMAP in, SMTP out. Login is the address. */
 export const MAILBOX = {
   address: 'support@instaradar.app',
-  fromName: 'InstaRadar Support',
+  fromName: 'Anastasia at InstaRadar',
   imap: { host: 'mail.privateemail.com', port: 993, secure: true },
   smtp: { host: 'mail.privateemail.com', port: 465, secure: true },
   /** Messages handled per fetch run. */

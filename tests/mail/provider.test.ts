@@ -20,7 +20,7 @@ describe('provider selection', () => {
     const imap = mailConfigFromEnv({ MAIL_PASSWORD: 'pw' })
     expect(imap.provider).toBe('imap')
     expect(imap.mailbox).toBe('support@instaradar.app')
-    expect(imap.fromName).toBe('InstaRadar Support')
+    expect(imap.fromName).toBe('Anastasia at InstaRadar')
     expect(imap.imap).toEqual({
       host: 'mail.privateemail.com',
       port: 993,
