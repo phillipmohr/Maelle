@@ -6,6 +6,8 @@
 import type { NotifyFn } from '#shared/services'
 import { poolDb, type Db } from '../jobs/db'
 import { defaultLog } from '../jobs/runner'
+import { dbUsageSink } from '../usage/db'
+import { isDbConfigured } from '../utils/db'
 import { services } from '../utils/services'
 import { mailConfigFromEnv, type MailConfig } from './config'
 import { classifierFromConfig, type HistoryClassifier } from './history-classify'
@@ -33,7 +35,9 @@ export function createMailContext(overrides: Partial<MailContext> = {}): MailCon
     store: overrides.store ?? createAttachmentStore(),
     config,
     classifier:
-      overrides.classifier !== undefined ? overrides.classifier : classifierFromConfig(config),
+      overrides.classifier !== undefined
+        ? overrides.classifier
+        : classifierFromConfig(config, isDbConfigured() ? dbUsageSink() : null),
     notify: overrides.notify ?? ((kind, payload) => services.notify(kind, payload)),
     now: overrides.now ?? (() => new Date()),
     log: overrides.log ?? defaultLog,

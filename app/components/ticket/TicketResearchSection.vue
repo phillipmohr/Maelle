@@ -4,17 +4,22 @@
  * Linear or the ticket), evidence tables in mono, "Show log lines", the conclusion and the
  * "No knowledge found" chip.
  */
-import type { AgentRunRow, ProposalRow } from '#shared/api'
+import type { AgentRunRow, ProposalRow, TicketUsage } from '#shared/api'
 import { researchMeta, sourceLink } from '~/composables/useTicketModel'
+import { formatCost } from '~/utils/format'
 
 const props = defineProps<{
   proposal: ProposalRow
   runs: AgentRunRow[]
+  /** Every Claude call of the ticket (IRDR-460); the breakdown opens on demand. */
+  usage?: TicketUsage | null
   /** Evidence tables open by default (high risk: the evidence is the point). */
   evidenceOpen?: boolean
 }>()
 
 const meta = computed(() => researchMeta(props.proposal, props.runs))
+const hasUsage = computed(() => (props.usage?.totals.calls ?? 0) > 0)
+const costOpen = ref(false)
 const open = ref<Record<string, boolean>>({})
 function isOpen(kind: 'e' | 'l', i: number): boolean {
   const k = `${kind}${i}`
@@ -103,8 +108,7 @@ function toggle(kind: 'e' | 'l', i: number) {
           <pre
             v-if="r.logLines.length && isOpen('l', i)"
             class="overflow-auto rounded-md border border-line bg-base px-[14px] py-3 font-mono text-[11.5px] leading-[1.5] text-fg-muted whitespace-pre-wrap"
-            >{{ r.logLines.join('\n') }}</pre
-          >
+            >{{ r.logLines.join('\n') }}</pre>
         </div>
       </div>
     </div>
@@ -113,6 +117,26 @@ function toggle(kind: 'e' | 'l', i: number) {
       class="rounded-md border border-line bg-base px-4 py-3 text-body leading-[1.55]"
     >
       <span class="font-semibold">Conclusion. </span>{{ proposal.conclusion }}
+    </div>
+    <div v-if="hasUsage" class="flex flex-col gap-3">
+      <button
+        type="button"
+        class="self-start text-caption font-semibold text-fg-muted hover:text-fg"
+        :aria-expanded="costOpen ? 'true' : 'false'"
+        @click="costOpen = !costOpen"
+      >
+        {{
+          costOpen
+            ? 'Hide cost breakdown'
+            : `Show cost breakdown · ${formatCost(usage!.totals.costUsd)} on this ticket`
+        }}
+      </button>
+      <TicketCostBreakdown
+        v-if="costOpen"
+        :usage="usage!"
+        :runs="runs"
+        :proposal-id="proposal.id"
+      />
     </div>
   </section>
 </template>

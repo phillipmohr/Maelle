@@ -147,6 +147,8 @@ export function emptyBundle(): SeedBundle {
     settings: [],
     autonomy_modes: [],
     action_locks: [],
+    model_calls: [],
+    agent_tool_calls: [],
   }
 }
 
@@ -350,7 +352,15 @@ export async function ticketDetailFromDb(
   const ticket = ticketRows[0]
   if (!ticket) return null
   const id = ticket.id as string
-  const [messages, proposals, action_executions, decisions, agent_runs] = await Promise.all([
+  const [
+    messages,
+    proposals,
+    action_executions,
+    decisions,
+    agent_runs,
+    model_calls,
+    agent_tool_calls,
+  ] = await Promise.all([
     exec(
       `select id, ticket_id, direction, from_email, from_name, to_emails, subject, text_body, text_stripped, html_body,
         translation, attachments, received_at, sent_at, sent_by, created_at
@@ -380,8 +390,22 @@ export async function ticketDetailFromDb(
     ),
     exec(
       `select id, ticket_id, trigger, status, progress, started_at, finished_at, duration_ms, model,
-        error, proposal_id, created_at
+        error, proposal_id, created_at, input_tokens, output_tokens, cache_read_tokens,
+        cache_creation_tokens, cost_usd::float8 as cost_usd
        from public.agent_runs where ticket_id = $1 order by created_at desc`,
+      [id],
+    ),
+    exec(
+      `select id, ticket_id, run_id, purpose, model, turn, attempt, status, stop_reason, error,
+        input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens, cost_usd::float8 as cost_usd,
+        duration_ms, created_at
+       from public.model_calls where ticket_id = $1 order by created_at desc`,
+      [id],
+    ),
+    exec(
+      `select id, run_id, ticket_id, model_call_id, turn, tool, source, ok, input, result_chars,
+        context_tokens, context_measured, duration_ms, created_at
+       from public.agent_tool_calls where ticket_id = $1 order by created_at, turn`,
       [id],
     ),
   ])
@@ -403,6 +427,8 @@ export async function ticketDetailFromDb(
     action_executions: action_executions.map(normalizeDbRow),
     decisions: decisions.map(normalizeDbRow),
     agent_runs: agent_runs.map(normalizeDbRow),
+    model_calls: model_calls.map(normalizeDbRow),
+    agent_tool_calls: agent_tool_calls.map(normalizeDbRow),
   }
   return seedTicketDetail(bundle, id)
 }

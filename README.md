@@ -557,6 +557,41 @@ and, while the jobs service is still the stub, runs the agent inline; the run th
 "Database is not configured" because the agent writes to Maelle's tables. With `SUPABASE_DB_URL`
 and `ANTHROPIC_API_KEY` set, the run is real; sources without credentials are skipped with a warning.
 
+## IRDR-460 · Claude token usage and costs
+
+Every Claude call is recorded with its tokens and priced at the time it ran, so the cost of a
+ticket, of a research step and of a period can be read from Maelle's own database.
+
+- `public.model_calls`: one row per API call. `purpose` is `agent_turn` (one row per turn of the
+  agent loop, with `run_id`, `turn` and `attempt`), `consistency_check` (the small model behind the
+  reply editor), `kb_condensation` (Create KB draft), `history_classification` (the classify-only
+  pass over imported history tickets) or `eval`. Columns: the four token kinds as the
+  API reports them (`input_tokens` uncached, `cache_read_tokens`, `cache_creation_tokens`,
+  `output_tokens`), `cost_usd`, `duration_ms`, `status` (`ok`, `refusal`, `error`), `stop_reason`.
+- `public.agent_tool_calls`: one row per tool call inside the loop: tool, source, input, result size,
+  duration, and `context_tokens`, the share of the next turn's input growth this result caused
+  (measured; `context_measured = false` marks the `result_chars / 4` estimate written when no next
+  turn came). Every later turn reads those tokens again, which is why a large tool result costs more
+  than its own size.
+- `public.agent_runs` keeps the totals of the latest attempt (`input_tokens` is uncached input since
+  this migration; `cache_read_tokens`, `cache_creation_tokens`, `cost_usd`), on success and on failure.
+
+Recording goes through `server/usage/` (`UsageSink`: Postgres or memory) and `trackModelCall()`,
+which wraps a call, reads `response.usage` and writes the row; a sink error is logged and never
+fails the call. Prices live in `shared/pricing.ts` (USD per million tokens per model, incl. cache
+reads and 5-minute cache writes); a model without a price records `cost_usd = null` and the UI shows
+tokens only. Update that table when a price or a model changes: the history keeps the price of its
+day.
+
+Where it shows: the ticket detail's Research meta line (`3 sources · 22s · $0.42`, the run that
+produced the proposal) with "Show cost breakdown" (every run with its turns and tool calls, the
+consistency checks and KB drafts, the ticket total), and the Costs page (`/anastasai/costs`,
+`GET /api/usage?days=30`): spend, per ticket, calls and cache share, cost per day, by purpose and
+model, the tools with their context tokens and durations, the most expensive tickets. The
+aggregation is one pure function (`shared/usage.ts`) fed by the database rows or by the seed, so
+`AUTH_DISABLED=true pnpm dev` shows the page with sample data. The live eval prints tokens and USD
+per fixture.
+
 ## Mail and jobs (IRDR-455)
 
 Every mail to support@instaradar.app becomes a ticket, every reply goes out exactly once, and one

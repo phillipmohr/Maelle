@@ -5,19 +5,25 @@
  */
 import type {
   ActionExecutionRow,
+  AgentRunRow,
   ExecutionStatus,
+  ModelCallRow,
   ProposalRow,
   ProposedActionRow,
   TicketDetailResponse,
   TicketRow,
+  TicketUsage,
+  ToolCallRow,
+  UsageTotals,
 } from '#shared/api'
-import type { ExecutionSummary } from '#shared/services'
+import type { AgentTrigger, ExecutionSummary } from '#shared/services'
 import { ACTIONS, isIrreversible, type ActionType } from '#shared/actions'
 import { caseShortLabel, notionPageUrl } from '#shared/case-types'
 import type { ResearchItem, SourceChip } from '#shared/proposal'
 import { RESOLUTION_LABELS } from '#shared/status'
+import { emptyTotals, mergeTotals, totalsOf } from '#shared/usage'
 import type { PillStatus } from '~/components/ui/StatusPill.vue'
-import { ageShort, money, plural, shortDate } from '~/utils/format'
+import { ageShort, formatCost, money, plural, shortDate } from '~/utils/format'
 
 /** An action as the checklist edits it: the proposed row plus the user's changes. */
 export interface EditableAction {
@@ -422,17 +428,133 @@ export function provenanceLine(proposal: Pick<ProposalRow, 'research' | 'reply'>
   return `Prepared by AnastasAI from ${joinWords(words)}`
 }
 
-/** "4 sources · 22s" */
+/** "4 sources · 22s · $0.42" (the cost of the run that produced the proposal, when known). */
 export function researchMeta(
   proposal: Pick<ProposalRow, 'research' | 'id'>,
-  runs: readonly { proposalId: string | null; durationMs: number | null }[],
+  runs: readonly {
+    proposalId: string | null
+    durationMs: number | null
+    costUsd?: number | null
+  }[],
 ): string {
   const kinds = new Set<string>()
   for (const r of proposal.research) for (const s of r.sources) kinds.add(s.kind)
   const run = runs.find((r) => r.proposalId === proposal.id) ?? runs[0]
   const parts = [plural(kinds.size, 'source')]
   if (run?.durationMs != null) parts.push(`${Math.max(1, Math.round(run.durationMs / 1000))}s`)
+  if (run?.costUsd != null) parts.push(formatCost(run.costUsd))
   return parts.join(' · ')
+}
+
+// ---------------------------------------------------------------- cost breakdown (IRDR-460)
+
+export interface UsageTurnView {
+  turn: number
+  call: ModelCallRow
+  tools: ToolCallRow[]
+}
+
+export interface UsageRunView {
+  runId: string
+  /** From the run row when the detail has it, else from the calls. */
+  trigger: AgentTrigger | null
+  attempt: number | null
+  model: string
+  startedAt: string
+  turns: UsageTurnView[]
+  totals: UsageTotals
+  /** The run that produced the active proposal. */
+  current: boolean
+}
+
+export interface UsageView {
+  runs: UsageRunView[]
+  /** Consistency checks, KB drafts and evals, newest first. */
+  others: ModelCallRow[]
+  totals: UsageTotals
+  /** Sum of the runs' totals (research and reply drafts). */
+  runsTotals: UsageTotals
+}
+
+/** Groups a ticket's calls into runs and turns, oldest run first, for the breakdown table. */
+export function usageView(
+  usage: TicketUsage | null | undefined,
+  runs: readonly Pick<AgentRunRow, 'id' | 'trigger' | 'proposalId'>[] = [],
+  proposalId: string | null = null,
+): UsageView {
+  if (!usage) return { runs: [], others: [], totals: emptyTotals(), runsTotals: emptyTotals() }
+  const byRun = new Map<string, ModelCallRow[]>()
+  const others: ModelCallRow[] = []
+  for (const c of usage.calls) {
+    if (c.purpose === 'agent_turn' && c.runId) {
+      const list = byRun.get(c.runId) ?? []
+      list.push(c)
+      byRun.set(c.runId, list)
+    } else others.push(c)
+  }
+  const toolsByCall = new Map<string, ToolCallRow[]>()
+  for (const t of usage.toolCalls) {
+    const key = t.modelCallId ?? `${t.runId}:${t.turn}`
+    const list = toolsByCall.get(key) ?? []
+    list.push(t)
+    toolsByCall.set(key, list)
+  }
+  const views: UsageRunView[] = [...byRun.entries()].map(([runId, calls]) => {
+    const sorted = [...calls].sort(
+      (a, b) => (a.attempt ?? 0) - (b.attempt ?? 0) || (a.turn ?? 0) - (b.turn ?? 0),
+    )
+    const row = runs.find((r) => r.id === runId)
+    return {
+      runId,
+      trigger: row?.trigger ?? null,
+      attempt: sorted.at(-1)?.attempt ?? null,
+      model: sorted[0]!.model,
+      startedAt: sorted[0]!.createdAt,
+      turns: sorted.map((call) => ({
+        turn: call.turn ?? 0,
+        call,
+        tools: toolsByCall.get(call.id) ?? toolsByCall.get(`${runId}:${call.turn}`) ?? [],
+      })),
+      totals: totalsOf(sorted),
+      current: row?.proposalId != null && row.proposalId === proposalId,
+    }
+  })
+  views.sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+  return {
+    runs: views,
+    others: others.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    totals: usage.totals,
+    runsTotals: views.reduce((acc, r) => mergeTotals(acc, r.totals), emptyTotals()),
+  }
+}
+
+/** "Re-run", "Customer reply", "New ticket" … */
+export function triggerLabel(t: AgentTrigger | null): string {
+  switch (t) {
+    case 'new_ticket':
+      return 'New ticket'
+    case 'customer_reply':
+      return 'Customer reply'
+    case 'case_override':
+      return 'Case override'
+    case 'follow_up':
+      return 'Follow-up'
+    case 'release_notification':
+      return 'Release notice'
+    case 'rerun':
+      return 'Re-run'
+    default:
+      return 'Run'
+  }
+}
+
+/** "stripe_events · cus_TBecker0203", "instaradar_select · select plan, status …" */
+export function toolCallLine(t: ToolCallRow): string {
+  const v = Object.values(t.input).find((x) => typeof x === 'string' && x.trim()) as
+    string | undefined
+  if (!v) return t.tool
+  const short = v.replace(/\s+/g, ' ').trim()
+  return `${t.tool} · ${short.length > 60 ? `${short.slice(0, 57)}…` : short}`
 }
 
 /** Where a source chip opens: Stripe, Notion, Linear or the ticket. */

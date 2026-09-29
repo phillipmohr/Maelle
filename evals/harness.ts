@@ -17,6 +17,7 @@ import type { ModelClient } from '../server/agent/model/types'
 import { runAgent, type AgentDeps, type AgentRunDetail } from '../server/agent/run'
 import { createMemoryAgentStore, type MemoryAgentStore } from '../server/agent/store/memory'
 import type { AgentStore } from '../server/agent/store/types'
+import { createMemoryUsageSink, type MemoryUsageSink } from '../server/usage/memory'
 import { SUBMIT_TOOL } from '../server/agent/tools/definitions'
 import { createFakeTools, type FakeTools } from '../server/agent/tools'
 import type { Expectation, Fixture, FixtureMessage, ScriptedSubmission } from './fixtures/types'
@@ -34,6 +35,8 @@ export interface HarnessRun {
   fixture: Fixture
   store: MemoryAgentStore
   tools: FakeTools
+  /** Every model call and tool call of the run (IRDR-460). */
+  usage: MemoryUsageSink
   ticketId: string
   result: AgentRunDetail
   ticket: TicketRow
@@ -168,7 +171,7 @@ export function harnessDeps(
   fixture: Fixture,
   store: AgentStore,
   opts: HarnessOptions & { scripted?: ScriptedSubmission } = {},
-): AgentDeps & { tools: FakeTools } {
+): AgentDeps & { tools: FakeTools; usage: MemoryUsageSink } {
   const tools = createFakeTools(fixture.tools, fixture.toolOptions)
   const now = opts.now ?? NOW
   const config: AgentRuntimeConfig = {
@@ -187,6 +190,7 @@ export function harnessDeps(
     attachments: createMemoryAttachmentStore(),
     config,
     services: opts.services ?? null,
+    usage: createMemoryUsageSink(() => now),
     now: () => now,
     log: opts.log ?? (() => {}),
   }
@@ -202,6 +206,7 @@ export async function runFixture(fixture: Fixture, opts: HarnessOptions = {}): P
     fixture,
     store,
     tools: deps.tools,
+    usage: deps.usage,
     ticketId,
     result,
     ticket: (await store.getTicket(ticketId))!,
@@ -248,6 +253,7 @@ export async function runFollowUp(
     fixture,
     store: prev.store,
     tools: deps.tools,
+    usage: deps.usage,
     ticketId: prev.ticketId,
     result,
     ticket: (await prev.store.getTicket(prev.ticketId))!,

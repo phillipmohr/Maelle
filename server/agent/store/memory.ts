@@ -137,6 +137,11 @@ export function createMemoryAgentStore(seed: MemorySeed = {}) {
         error: null,
         proposalId: null,
         createdAt: new Date().toISOString(),
+        inputTokens: null,
+        outputTokens: null,
+        cacheReadTokens: null,
+        cacheCreationTokens: null,
+        costUsd: null,
         jobId,
         attempt: 1,
       }
@@ -156,6 +161,11 @@ export function createMemoryAgentStore(seed: MemorySeed = {}) {
       r.proposalId = f.proposalId ?? r.proposalId
       r.finishedAt = new Date().toISOString()
       r.durationMs = f.durationMs
+      r.inputTokens = f.inputTokens ?? null
+      r.outputTokens = f.outputTokens ?? null
+      r.cacheReadTokens = f.cacheReadTokens ?? null
+      r.cacheCreationTokens = f.cacheCreationTokens ?? null
+      r.costUsd = f.costUsd ?? null
     },
     async setTicketStatus(ticketId, from, to) {
       const t = tickets.find((x) => x.id === ticketId)
