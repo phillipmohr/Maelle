@@ -78,6 +78,8 @@ export interface TicketRow {
   closedAt: string | null
   createdAt: string
   updatedAt: string
+  /** Set when the ticket came from the mailbox history import (IRDR-455): closed on arrival, no agent run. */
+  importedAt?: string | null
 }
 
 export interface MessageRow {
@@ -235,6 +237,8 @@ export interface TicketListResponse {
     closedLast3Days: number
     closedToday: number
   }
+  /** `status=closed` only: closed tickets per case under the same resolution and date filters (IRDR-455). */
+  caseCounts?: Partial<Record<CaseType, number>>
 }
 
 // ---------------------------------------------------------------- GET /api/tickets/:id (UI ticket; stub: foundation)
@@ -439,6 +443,10 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: 'POST', path: '/api/webhooks/linear', owner: 'IRDR-455', auth: 'signature' },
   { method: 'POST', path: '/api/cron/tick', owner: 'IRDR-455', auth: 'cron_secret' },
   { method: 'POST', path: '/api/cron/fetch-mail', owner: 'IRDR-455', auth: 'cron_secret' },
+  { method: 'GET', path: '/api/mail/status', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/fetch', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/import', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/classify-imported', owner: 'IRDR-455', auth: 'session' },
 ]
 
 /** Proposal shape as the agent produces it, re-exported for API consumers. */
@@ -487,4 +495,87 @@ export interface LearningResponse {
 export interface AutonomyResponse {
   /** After PUT: the audit rows this request wrote (empty when nothing changed). */
   changes?: SettingsAuditItem[]
+}
+
+// ---------------------------------------------------------------- IRDR-455 additions: mailbox status and history import
+
+export type MailBackfillFolder = 'inbox' | 'sent'
+export type MailBackfillStatus = 'queued' | 'running' | 'done' | 'failed'
+
+/** One row of `mail_backfills`: the import cursor and counters of one folder. */
+export interface MailBackfillProgress {
+  folder: MailBackfillFolder
+  status: MailBackfillStatus
+  /** Last UID handled and the highest UID in the folder when the import started (null before the first chunk). */
+  lastUid: number | null
+  maxUid: number | null
+  listed: number
+  imported: number
+  /** Already known (dedupe by Message-ID or provider id). */
+  skipped: number
+  /** Auto-replies, bounces, bulk, own mail in INBOX, mail to ourselves in Sent. */
+  ignored: number
+  failed: number
+  ticketsCreated: number
+  lastError: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  updatedAt: string
+}
+
+/** The classify-only pass over imported tickets. */
+export interface MailClassifyProgress {
+  /** Imported tickets in total, with a case, still waiting, and given up on. */
+  imported: number
+  classified: number
+  pending: number
+  failed: number
+  /** A chunk job is queued, retrying or running. */
+  active: boolean
+  /** Why nothing is scheduled although tickets wait (no ANTHROPIC_API_KEY). */
+  blocked: string | null
+  lastError: string | null
+}
+
+export interface MailStatusResponse {
+  provider: 'imap' | 'fake'
+  mailbox: string
+  /** Live fetch: when it last ran, its summary (mail_cursors.last_result) and whether a run is pending. */
+  fetch: {
+    lastAt: string | null
+    lastResult: Record<string, unknown> | null
+    active: boolean
+  }
+  backfill: {
+    folders: MailBackfillProgress[]
+    active: boolean
+  }
+  classify: MailClassifyProgress
+  /** Closed tickets per case, imported and live together (for the "what do people write about" view). */
+  caseCounts: Partial<Record<CaseType, number>>
+}
+
+export interface MailFetchResponse {
+  ok: true
+  fetched: number
+  ingested: number
+  skipped: number
+  ignored: number
+  failed: number
+  ticketsCreated: number
+}
+
+export interface MailImportResponse {
+  ok: true
+  /** False when an import was already running or queued (nothing was changed). */
+  started: boolean
+  status: MailStatusResponse
+}
+
+export interface MailClassifyImportedResponse {
+  ok: true
+  /** False when nothing waits, a chunk is already pending, or the model key is missing (`reason` says which). */
+  started: boolean
+  reason: string | null
+  status: MailStatusResponse
 }

@@ -12,6 +12,8 @@ import type {
   FetchedRaw,
   ListNewOptions,
   ListNewResult,
+  ListRangeOptions,
+  ListRangeResult,
   MailCursor,
   MailProvider,
   OutgoingMail,
@@ -110,6 +112,56 @@ export class ImapSmtpProvider implements MailProvider {
     })
   }
 
+  /**
+   * History import: one page of a folder by UID, oldest first. `uidNext - 1` is the denominator for
+   * the progress display; the page's last UID is the next cursor. A changed UIDVALIDITY (the
+   * mailbox was rebuilt) restarts the folder, which is harmless: every message is deduplicated.
+   */
+  async listRange(opts: ListRangeOptions): Promise<ListRangeResult> {
+    this.cache.clear()
+    return this.withClient(async (client) => {
+      const path = opts.folder === 'sent' ? await this.sentFolder(client) : 'INBOX'
+      const lock = await client.getMailboxLock(path)
+      try {
+        const box = client.mailbox
+        if (!box) throw new Error(`imap: ${path} could not be opened`)
+        const uidValidity = String(box.uidValidity)
+        const sameGeneration = opts.uidValidity == null || opts.uidValidity === uidValidity
+        const after = sameGeneration && opts.afterUid != null ? Math.max(0, opts.afterUid) : 0
+        const maxUid = Math.max(0, Number(box.uidNext) - 1)
+        let uids: number[] = []
+        if (after < maxUid) {
+          // `n:*` also returns the last message when its UID is below n; filter it out.
+          const found = await client.search({ uid: `${after + 1}:*` }, { uid: true })
+          uids = (Array.isArray(found) ? found : []).filter((u) => u > after)
+          uids.sort((a, b) => a - b)
+        }
+        const batch = uids.slice(0, opts.limit)
+        const messages: ProviderMessageRef[] = []
+        if (batch.length) {
+          for await (const msg of client.fetch(
+            batch,
+            { uid: true, source: true, threadId: true },
+            { uid: true },
+          )) {
+            const id = `${uidValidity}:${msg.uid}`
+            if (msg.source) this.cache.set(id, { raw: msg.source, threadId: msg.threadId ?? null })
+            messages.push({ id, threadId: msg.threadId ?? null, folder: opts.folder, uid: msg.uid })
+          }
+        }
+        return {
+          messages,
+          uidValidity,
+          maxUid,
+          lastUid: batch.length ? batch[batch.length - 1]! : Math.max(after, maxUid),
+          reset: !sameGeneration,
+        }
+      } finally {
+        lock.release()
+      }
+    })
+  }
+
   async fetch(ref: ProviderMessageRef): Promise<FetchedRaw> {
     const cached = this.cache.get(ref.id)
     if (cached) {
@@ -119,7 +171,8 @@ export class ImapSmtpProvider implements MailProvider {
     const uid = Number(ref.id.split(':')[1])
     if (!Number.isFinite(uid)) throw new Error(`imap: bad message ref ${ref.id}`)
     return this.withClient(async (client) => {
-      const lock = await client.getMailboxLock('INBOX')
+      const path = ref.folder === 'sent' ? await this.sentFolder(client) : 'INBOX'
+      const lock = await client.getMailboxLock(path)
       try {
         const msg = await client.fetchOne(
           String(uid),

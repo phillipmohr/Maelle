@@ -165,6 +165,7 @@ watch(() => route.hash, scrollToHash)
       v-model:filters="closedFilters"
       v-model:filters-open="closedFiltersOpen"
       :items="closed.items.value"
+      :case-counts="closed.caseCounts.value"
       :now="nowDate"
       :has-more="closed.hasMore.value"
       :loading-more="closed.loadingMore.value"
