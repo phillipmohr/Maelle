@@ -10,7 +10,10 @@
 import { deterministicUuid as uid, executionIdempotencyKey } from '../utils/ids'
 import type { ActionType } from '../actions'
 import type { CaseType } from '../case-types'
-import type { CustomerContext } from '../api'
+import type { CustomerContext, ModelCallPurpose } from '../api'
+import { MODELS } from '../config'
+import { costUsd, type TokenUsage } from '../pricing'
+import { estimateContextTokens } from '../usage'
 
 export const SEED_APP_ID = uid('app:instaradar')
 
@@ -31,6 +34,9 @@ export interface SeedBundle {
   settings: Row[]
   autonomy_modes: Row[]
   action_locks: Row[]
+  /** IRDR-460: one row per Claude call and per tool call of the agent loop. */
+  model_calls: Row[]
+  agent_tool_calls: Row[]
 }
 
 export const SEED_TABLE_ORDER: (keyof SeedBundle)[] = [
@@ -48,6 +54,8 @@ export const SEED_TABLE_ORDER: (keyof SeedBundle)[] = [
   'decisions',
   'release_notifications',
   'cancellation_reasons',
+  'model_calls',
+  'agent_tool_calls',
 ]
 
 const HOUR = 3_600_000
@@ -113,6 +121,8 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
     decisions: [],
     release_notifications: [],
     cancellation_reasons: [],
+    model_calls: [],
+    agent_tool_calls: [],
     settings: [
       {
         app_id: SEED_APP_ID,
@@ -275,6 +285,10 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
       r.index ?? bundle.agent_runs.filter((x) => x.ticket_id === ticketId(ticketNumber)).length
     const id = uid(`run:${ticketNumber}:${idx}`)
     const finished = r.durationMs != null ? new Date(r.startedAt.getTime() + r.durationMs) : null
+    const usage =
+      r.status === 'succeeded' || r.status === 'failed'
+        ? agentCalls(id, ticketNumber, idx, r.status, r.startedAt, r.durationMs ?? 20_000, r.error)
+        : null
     bundle.agent_runs.push({
       id,
       ticket_id: ticketId(ticketNumber),
@@ -284,14 +298,204 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
       started_at: iso(r.startedAt),
       finished_at: finished ? iso(finished) : null,
       duration_ms: r.durationMs ?? null,
-      model: 'claude-fable-5-1',
-      input_tokens: r.status === 'succeeded' ? 18_400 : null,
-      output_tokens: r.status === 'succeeded' ? 2_100 : null,
+      model: MODELS.agent,
+      input_tokens: usage?.inputTokens ?? null,
+      output_tokens: usage?.outputTokens ?? null,
+      cache_read_tokens: usage?.cacheReadTokens ?? null,
+      cache_creation_tokens: usage?.cacheCreationTokens ?? null,
+      cost_usd: usage?.costUsd ?? null,
       error: r.error ?? null,
       proposal_id: null,
       created_at: iso(r.startedAt),
     })
     return id
+  }
+
+  // ---------------------------------------------------------------- Claude calls (IRDR-460)
+
+  /** The system prompt (protocol, templates, knowledge) is written to the cache on turn 1 and read after. */
+  const SYSTEM_PROMPT_TOKENS = 9_600
+
+  interface SeedTurn {
+    input: number
+    output: number
+    /** tool, progress source, result size in characters, duration */
+    tools: [string, string | null, number, number][]
+    error?: string
+  }
+
+  const TOOL_INPUT: Record<string, (ticketNumber: number) => Record<string, unknown>> = {
+    stripe_events: (n) => ({ customerId: `cus_seed${n}`, days: 400 }),
+    instaradar_select: (n) => ({
+      sql: `select plan, status, created_at from users where email = 'seed-${n}@example.com' limit 1`,
+      purpose: 'plan and account status',
+    }),
+    notion_page: () => ({ pageId: '3e8c931f6ae581f3b55be4fc0ebd1597' }),
+    vercel_logs: (n) => ({ userId: `usr_seed${n}`, sinceDays: 7, level: 'error' }),
+    submit_proposal: () => ({}),
+  }
+
+  function modelCall(
+    ticketNumber: number,
+    c: {
+      key: string
+      purpose: ModelCallPurpose
+      model: string
+      at: Date
+      usage: TokenUsage
+      durationMs: number
+      runId?: string | null
+      turn?: number | null
+      status?: 'ok' | 'refusal' | 'error'
+      stopReason?: string | null
+      error?: string | null
+    },
+  ): string {
+    const id = uid(`model_call:${ticketNumber}:${c.key}`)
+    const status = c.status ?? 'ok'
+    bundle.model_calls.push({
+      id,
+      ticket_id: ticketId(ticketNumber),
+      run_id: c.runId ?? null,
+      purpose: c.purpose,
+      model: c.model,
+      turn: c.turn ?? null,
+      attempt: c.runId ? 1 : null,
+      status,
+      stop_reason: c.stopReason ?? null,
+      error: c.error ?? null,
+      input_tokens: c.usage.inputTokens,
+      cache_read_tokens: c.usage.cacheReadTokens,
+      cache_creation_tokens: c.usage.cacheCreationTokens,
+      output_tokens: c.usage.outputTokens,
+      cost_usd: status === 'error' ? 0 : costUsd(c.model, c.usage),
+      duration_ms: c.durationMs,
+      created_at: iso(c.at),
+    })
+    return id
+  }
+
+  /** The turns of one agent run: research tools, then submit_proposal. Failed runs stop with an API error. */
+  function agentCalls(
+    runId: string,
+    ticketNumber: number,
+    runIndex: number,
+    status: 'succeeded' | 'failed',
+    startedAt: Date,
+    durationMs: number,
+    error?: string,
+  ): TokenUsage & { costUsd: number | null } {
+    const turns: SeedTurn[] =
+      status === 'succeeded'
+        ? [
+            {
+              input: 4_150,
+              output: 360,
+              tools: [
+                ['stripe_events', 'stripe', 7_420, 640],
+                ['instaradar_select', 'supabase', 2_610, 210],
+              ],
+            },
+            { input: 7_020, output: 240, tools: [['notion_page', 'kb', 3_310, 480]] },
+            { input: 8_140, output: 1_420, tools: [['submit_proposal', null, 18, 25]] },
+          ]
+        : [
+            { input: 4_150, output: 360, tools: [['stripe_events', 'stripe', 7_420, 640]] },
+            { input: 0, output: 0, tools: [], error: error ?? 'Model overloaded' },
+          ]
+    const total: TokenUsage & { costUsd: number | null } = {
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+    }
+    const slice = Math.round(durationMs / (turns.length + 1))
+    turns.forEach((t, i) => {
+      const turn = i + 1
+      const at = new Date(startedAt.getTime() + slice * turn)
+      const usage: TokenUsage = t.error
+        ? { inputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0 }
+        : {
+            inputTokens: t.input,
+            cacheReadTokens: i === 0 ? 0 : SYSTEM_PROMPT_TOKENS,
+            cacheCreationTokens: i === 0 ? SYSTEM_PROMPT_TOKENS : 0,
+            outputTokens: t.output,
+          }
+      const callId = modelCall(ticketNumber, {
+        key: `run${runIndex}:turn${turn}`,
+        purpose: 'agent_turn',
+        model: MODELS.agent,
+        at,
+        usage,
+        durationMs: t.error ? 15_000 : slice - 400,
+        runId,
+        turn,
+        status: t.error ? 'error' : 'ok',
+        stopReason: t.error ? null : 'tool_use',
+        error: t.error ?? null,
+      })
+      total.inputTokens += usage.inputTokens
+      total.cacheReadTokens += usage.cacheReadTokens
+      total.cacheCreationTokens += usage.cacheCreationTokens
+      total.outputTokens += usage.outputTokens
+      const cost = t.error ? 0 : costUsd(MODELS.agent, usage)
+      total.costUsd = total.costUsd === null || cost === null ? null : total.costUsd + cost
+      const measured = i < turns.length - 1 && !turns[i + 1]!.error
+      t.tools.forEach(([tool, source, chars, ms], j) => {
+        bundle.agent_tool_calls.push({
+          id: uid(`tool_call:${ticketNumber}:run${runIndex}:turn${turn}:${j}`),
+          run_id: runId,
+          ticket_id: ticketId(ticketNumber),
+          model_call_id: callId,
+          turn,
+          tool,
+          source,
+          ok: true,
+          input: (TOOL_INPUT[tool] ?? (() => ({})))(ticketNumber),
+          result_chars: chars,
+          context_tokens: measured ? Math.round(chars / 3.6) : estimateContextTokens(chars),
+          context_measured: measured,
+          duration_ms: ms,
+          created_at: iso(new Date(at.getTime() + 150 + j * ms)),
+        })
+      })
+    })
+    if (total.costUsd !== null) total.costUsd = Math.round(total.costUsd * 1_000_000) / 1_000_000
+    return total
+  }
+
+  /** Two consistency checks while the reply was being edited (the small model). */
+  function consistencyChecks(ticketNumber: number, decidedAt: Date) {
+    for (const [i, secondsBefore] of [34, 9].entries()) {
+      modelCall(ticketNumber, {
+        key: `consistency:${decidedAt.getTime()}:${i}`,
+        purpose: 'consistency_check',
+        model: MODELS.small,
+        at: new Date(decidedAt.getTime() - secondsBefore * 1000),
+        usage: {
+          inputTokens: 1_860 + i * 40,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens: 48,
+        },
+        durationMs: 1_900 + i * 300,
+        stopReason: 'tool_use',
+      })
+    }
+  }
+
+  /** "Create KB draft": one condensation of the final reply (the small model). */
+  function kbCondensation(ticketNumber: number, at: Date) {
+    modelCall(ticketNumber, {
+      key: `kb:${at.getTime()}`,
+      purpose: 'kb_condensation',
+      model: MODELS.small,
+      at,
+      usage: { inputTokens: 1_240, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 190 },
+      durationMs: 3_400,
+      stopReason: 'end_turn',
+    })
   }
 
   interface ProposalSpec {
@@ -488,6 +692,7 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
       decided_at: iso(d.at),
       created_at: iso(d.at),
     })
+    if (d.decision === 'approved_with_edits') consistencyChecks(ticketNumber, d.at)
   }
 
   const SUPPORT = 'support@instaradar.app'
@@ -1602,6 +1807,9 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
   function closed(c: ClosedSpec) {
     const created = new Date(c.closedAt.getTime() - 2 * HOUR)
     const by: 'you' | 'auto' = c.resolution === 'auto' ? 'auto' : 'you'
+    // Knowledge-style answers got a KB draft after the reply (IRDR-460 seed rows).
+    if (c.caseType === 'product_question' || c.caseType === 'data_accuracy')
+      kbCondensation(c.number, new Date(c.closedAt.getTime() + 4 * 60_000))
     ticket({
       number: c.number,
       email: c.email,

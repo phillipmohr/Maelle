@@ -147,6 +147,8 @@ export function emptyBundle(): SeedBundle {
     settings: [],
     autonomy_modes: [],
     action_locks: [],
+    model_calls: [],
+    agent_tool_calls: [],
   }
 }
 
@@ -154,7 +156,7 @@ const TICKET_COLUMNS = `t.id, t.app_id, t.display_number, t.customer_email, t.cu
   t.status, t.resolution, t.case_type, t.case_confidence, t.risk_level, t.risk_reason,
   t.due_date::text as due_date, t.stage, t.waiting_for, t.snoozed_until, t.tags, t.instaradar_user_id,
   t.stripe_customer_id, t.customer_context, t.first_message_at, t.last_message_at,
-  t.last_customer_message_at, t.closed_at, t.created_at, t.updated_at`
+  t.last_customer_message_at, t.closed_at, t.created_at, t.updated_at, t.imported_at`
 
 export const OPEN_STATUS_SQL = `('new','researching','needs_decision','executing','action_failed','manual')`
 
@@ -212,6 +214,33 @@ export function ticketCountsSql(now: Date): { text: string; params: unknown[] } 
   }
 }
 
+/**
+ * `status=closed`: closed tickets per case under the same resolution, date and search filters
+ * (the case filter itself is left out, so the chips can show every count).
+ */
+export function closedCaseCountsSql(q: ParsedTicketListQuery): { text: string; params: unknown[] } {
+  const params: unknown[] = []
+  const where: string[] = [`t.status = 'closed'`, `t.case_type is not null`]
+  const p = (v: unknown) => {
+    params.push(v)
+    return `$${params.length}`
+  }
+  if (q.resolution) where.push(`t.resolution = ${p(q.resolution)}`)
+  if (q.from) where.push(`t.closed_at >= ${p(q.from)}::timestamptz`)
+  if (q.to) where.push(`t.closed_at <= ${p(q.to)}::timestamptz`)
+  if (q.q) {
+    const like = p(`%${q.q.replace(/^#/, '').replace(/[%_\\]/g, (c) => `\\${c}`)}%`)
+    where.push(
+      `(t.customer_name ilike ${like} or t.customer_email ilike ${like} or t.subject ilike ${like}
+        or t.display_number::text like ${like})`,
+    )
+  }
+  return {
+    text: `select t.case_type, count(*)::int as n from public.tickets t where ${where.join(' and ')} group by t.case_type`,
+    params,
+  }
+}
+
 async function relatedRowsForList(exec: QueryExecutor, ticketIds: string[]) {
   if (ticketIds.length === 0) {
     return {
@@ -260,9 +289,12 @@ export async function ticketListFromDb(
 ): Promise<TicketListResponse> {
   const list = ticketListSql(query)
   const counts = ticketCountsSql(now)
-  const [pageRows, countRows] = await Promise.all([
+  const closedOnly = isClosedOnly(query)
+  const byCase = closedOnly ? closedCaseCountsSql(query) : null
+  const [pageRows, countRows, caseRows] = await Promise.all([
     exec(list.text, list.params),
     exec(counts.text, counts.params),
+    byCase ? exec(byCase.text, byCase.params) : Promise.resolve([] as DbRow[]),
   ])
   const hasMore = pageRows.length > query.limit
   const tickets = pageRows.slice(0, query.limit).map(normalizeDbRow)
@@ -286,6 +318,10 @@ export async function ticketListFromDb(
     hasMore && isClosedOnly(query) && last && typeof last.closed_at === 'string'
       ? encodeClosedCursor({ closedAt: last.closed_at, id: last.id as string })
       : null
+  const caseCounts: Partial<Record<CaseType, number>> = {}
+  for (const r of caseRows) {
+    if (isCaseType(r.case_type)) caseCounts[r.case_type] = Number(r.n)
+  }
   return {
     items: view.items,
     nextCursor,
@@ -297,6 +333,7 @@ export async function ticketListFromDb(
       closedLast3Days: c.closed_last_3_days ?? 0,
       closedToday: c.closed_today ?? 0,
     },
+    ...(closedOnly ? { caseCounts } : {}),
   }
 }
 
@@ -315,7 +352,15 @@ export async function ticketDetailFromDb(
   const ticket = ticketRows[0]
   if (!ticket) return null
   const id = ticket.id as string
-  const [messages, proposals, action_executions, decisions, agent_runs] = await Promise.all([
+  const [
+    messages,
+    proposals,
+    action_executions,
+    decisions,
+    agent_runs,
+    model_calls,
+    agent_tool_calls,
+  ] = await Promise.all([
     exec(
       `select id, ticket_id, direction, from_email, from_name, to_emails, subject, text_body, text_stripped, html_body,
         translation, attachments, received_at, sent_at, sent_by, created_at
@@ -345,8 +390,22 @@ export async function ticketDetailFromDb(
     ),
     exec(
       `select id, ticket_id, trigger, status, progress, started_at, finished_at, duration_ms, model,
-        error, proposal_id, created_at
+        error, proposal_id, created_at, input_tokens, output_tokens, cache_read_tokens,
+        cache_creation_tokens, cost_usd::float8 as cost_usd
        from public.agent_runs where ticket_id = $1 order by created_at desc`,
+      [id],
+    ),
+    exec(
+      `select id, ticket_id, run_id, purpose, model, turn, attempt, status, stop_reason, error,
+        input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens, cost_usd::float8 as cost_usd,
+        duration_ms, created_at
+       from public.model_calls where ticket_id = $1 order by created_at desc`,
+      [id],
+    ),
+    exec(
+      `select id, run_id, ticket_id, model_call_id, turn, tool, source, ok, input, result_chars,
+        context_tokens, context_measured, duration_ms, created_at
+       from public.agent_tool_calls where ticket_id = $1 order by created_at, turn`,
       [id],
     ),
   ])
@@ -368,6 +427,8 @@ export async function ticketDetailFromDb(
     action_executions: action_executions.map(normalizeDbRow),
     decisions: decisions.map(normalizeDbRow),
     agent_runs: agent_runs.map(normalizeDbRow),
+    model_calls: model_calls.map(normalizeDbRow),
+    agent_tool_calls: agent_tool_calls.map(normalizeDbRow),
   }
   return seedTicketDetail(bundle, id)
 }

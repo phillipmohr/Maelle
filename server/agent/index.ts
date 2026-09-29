@@ -15,6 +15,8 @@ import { createUnavailableModelClient } from './model/types'
 import { runAgent, type AgentDeps, type AgentRunDetail, type RunOptions } from './run'
 import { createDbAgentStore } from './store/db'
 import { createToolsFromEnv } from './tools'
+import { dbUsageSink } from '../usage/db'
+import { createMemoryUsageSink } from '../usage/memory'
 
 export interface AgentServiceImpl extends AgentService {
   run(ticketId: string, trigger: AgentTrigger, opts?: RunOptions): Promise<AgentRunResult>
@@ -30,10 +32,18 @@ export function createAgentService(overrides: Partial<AgentDeps> = {}): AgentSer
       dbQuery: <T extends Record<string, unknown>>(text: string, params: unknown[]) =>
         dbQuery<T>(text, params),
     })
+  const store = overrides.store ?? createDbAgentStore()
   const deps: AgentDeps = {
     config,
     tools,
-    store: overrides.store ?? createDbAgentStore(),
+    store,
+    // Token rows go where the run rows go: the database, or memory when the store is in memory.
+    usage:
+      overrides.usage === undefined
+        ? store.kind === 'db'
+          ? dbUsageSink()
+          : createMemoryUsageSink()
+        : overrides.usage,
     model:
       overrides.model ??
       (config.anthropicApiKey

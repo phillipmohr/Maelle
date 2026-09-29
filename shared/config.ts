@@ -29,7 +29,7 @@ export const OWNER = {
 /** The support mailbox: Namecheap Private Email, IMAP in, SMTP out. Login is the address. */
 export const MAILBOX = {
   address: 'support@instaradar.app',
-  fromName: 'InstaRadar Support',
+  fromName: 'Anastasia at InstaRadar',
   imap: { host: 'mail.privateemail.com', port: 993, secure: true },
   smtp: { host: 'mail.privateemail.com', port: 465, secure: true },
   /** Messages handled per fetch run. */
@@ -39,6 +39,22 @@ export const MAILBOX = {
   markRead: false,
   /** A `sending` row older than this is treated as stuck and taken over. */
   stuckSendMinutes: 5,
+  /**
+   * History import ("Import history" in the inbox): the whole INBOX and the Sent folder, oldest
+   * first, in chunks that fit next to the live fetch in the fetch-mail lane. Imported tickets are
+   * closed on arrival, get no agent run, and are classified afterwards (MODELS.classify).
+   */
+  backfill: {
+    /** Messages listed per chunk. */
+    chunkLimit: 50,
+    /** Wall-clock budget of one chunk (the fetch lane has 50 s in total). */
+    chunkBudgetMs: 25_000,
+    /** Imported tickets classified per chunk, and the budget of one chunk (tick lane). */
+    classifyChunkLimit: 20,
+    classifyChunkBudgetMs: 120_000,
+    /** A ticket whose classification failed this often is left without a case. */
+    classifyMaxAttempts: 3,
+  },
   /** Appended to every outgoing reply when it is sent (the draft itself carries no sign-off). */
   signature: [
     'Best wishes,',
@@ -100,6 +116,8 @@ export const MODELS = {
   agent: 'claude-fable-5-1',
   /** Consistency check and the learning loop's condensations. */
   small: 'claude-sonnet-5',
+  /** Classify-only pass over imported history tickets (one short call per ticket, low effort). */
+  classify: 'claude-opus-5-5',
 } as const
 
 /** Agent tuning. */

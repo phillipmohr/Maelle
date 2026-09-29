@@ -12,7 +12,7 @@ import type { AgentRuntimeConfig } from './config'
 import { buildCustomerContext, deriveFacts } from './context'
 import { finalizeSubmission } from './finalize'
 import type { KnowledgeLoader } from './knowledge/loader'
-import { AgentLoopError, runToolLoop } from './loop'
+import { AgentLoopError, runToolLoop, type LoopUsage } from './loop'
 import type { ModelClient } from './model/types'
 import { buildSystemPrompt, buildUserMessage } from './prompt'
 import { candidateEmailsFor, gatherResearch } from './research'
@@ -22,6 +22,7 @@ import type { AgentTools } from './tools'
 import { detectConfirmation } from './two-stage'
 import type { LinearIssueSummary, Progress, ProgressSource } from './types'
 import { createMemoryAttachmentStore } from './attachments/store'
+import type { UsageSink } from '../usage/types'
 
 export interface AgentDeps {
   store: AgentStore
@@ -32,6 +33,8 @@ export interface AgentDeps {
   config: AgentRuntimeConfig
   /** Autonomy + executor hand-off after a successful run; null in unit tests. */
   services: Pick<Services, 'autonomy' | 'executor'> | null
+  /** Per-call and per-tool token rows (IRDR-460); null records nothing. */
+  usage?: UsageSink | null
   now?: () => Date
   log?: (msg: string, data?: unknown) => void
 }
@@ -68,6 +71,8 @@ export async function runAgent(
   const log = deps.log ?? (() => {})
   const { store, config } = deps
   const progress: Progress = {}
+  /** Running loop totals, so a failed run still records what it spent. */
+  let loopUsage: LoopUsage | null = null
 
   const ticket = await store.getTicket(ticketId)
   if (!ticket)
@@ -264,6 +269,11 @@ export async function runAgent(
         if (ok) await persistProgress({ [source]: 'ok' })
         else if (progress[source] !== 'ok') await persistProgress({ [source]: 'failed' })
       },
+      onTurn: (u) => {
+        loopUsage = u
+      },
+      usage: deps.usage ?? null,
+      callMeta: { ticketId, runId, attempt: start.attempt },
       log,
     })
 
@@ -299,11 +309,10 @@ export async function runAgent(
       status: 'succeeded',
       proposalId: written.proposalId,
       durationMs,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
+      ...runTokens(result.usage),
     })
     log(
-      `run ${runId} succeeded in ${durationMs} ms (v${written.version}, ${result.usage.turns} turns)`,
+      `run ${runId} succeeded in ${durationMs} ms (v${written.version}, ${result.usage.turns} turns, ${usageLine(result.usage)})`,
     )
 
     if (deps.services) {
@@ -328,7 +337,14 @@ export async function runAgent(
     const error =
       e instanceof AgentLoopError ? e.message : `Agent run failed: ${(e as Error).message}`
     log(`run ${runId} failed: ${error}`)
-    await store.finishRun(runId, { status: 'failed', error, durationMs }).catch(() => {})
+    await store
+      .finishRun(runId, {
+        status: 'failed',
+        error,
+        durationMs,
+        ...(loopUsage ? runTokens(loopUsage) : {}),
+      })
+      .catch(() => {})
     try {
       await store.markRunFailed(
         ticketId,
@@ -343,4 +359,19 @@ export async function runAgent(
     // the ticket is back in needs_decision meanwhile, and a retried job reuses this run row.
     return { runId, status: 'failed', retryable: true, error, durationMs, progress }
   }
+}
+
+function runTokens(u: LoopUsage) {
+  return {
+    inputTokens: u.inputTokens,
+    outputTokens: u.outputTokens,
+    cacheReadTokens: u.cacheReadTokens,
+    cacheCreationTokens: u.cacheCreationTokens,
+    costUsd: u.costUsd,
+  }
+}
+
+function usageLine(u: LoopUsage): string {
+  const tokens = u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens + u.outputTokens
+  return `${tokens} tokens${u.costUsd != null ? `, $${u.costUsd.toFixed(4)}` : ''}`
 }

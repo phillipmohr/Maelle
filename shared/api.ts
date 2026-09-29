@@ -78,6 +78,8 @@ export interface TicketRow {
   closedAt: string | null
   createdAt: string
   updatedAt: string
+  /** Set when the ticket came from the mailbox history import (IRDR-455): closed on arrival, no agent run. */
+  importedAt?: string | null
 }
 
 export interface MessageRow {
@@ -235,6 +237,8 @@ export interface TicketListResponse {
     closedLast3Days: number
     closedToday: number
   }
+  /** `status=closed` only: closed tickets per case under the same resolution and date filters (IRDR-455). */
+  caseCounts?: Partial<Record<CaseType, number>>
 }
 
 // ---------------------------------------------------------------- GET /api/tickets/:id (UI ticket; stub: foundation)
@@ -404,7 +408,8 @@ export interface CronAck {
 
 // ---------------------------------------------------------------- Route table
 
-export type RouteOwner = 'IRDR-454' | 'IRDR-455' | 'IRDR-456' | 'IRDR-457' | 'IRDR-458' | 'IRDR-459'
+export type RouteOwner =
+  'IRDR-454' | 'IRDR-455' | 'IRDR-456' | 'IRDR-457' | 'IRDR-458' | 'IRDR-459' | 'IRDR-460'
 
 export interface RouteSpec {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -436,9 +441,14 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: 'GET', path: '/api/playbook', owner: 'IRDR-459', auth: 'session' },
   { method: 'POST', path: '/api/learning/example', owner: 'IRDR-459', auth: 'session' },
   { method: 'POST', path: '/api/learning/kb-draft', owner: 'IRDR-459', auth: 'session' },
+  { method: 'GET', path: '/api/usage', owner: 'IRDR-460', auth: 'session' },
   { method: 'POST', path: '/api/webhooks/linear', owner: 'IRDR-455', auth: 'signature' },
   { method: 'POST', path: '/api/cron/tick', owner: 'IRDR-455', auth: 'cron_secret' },
   { method: 'POST', path: '/api/cron/fetch-mail', owner: 'IRDR-455', auth: 'cron_secret' },
+  { method: 'GET', path: '/api/mail/status', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/fetch', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/import', owner: 'IRDR-455', auth: 'session' },
+  { method: 'POST', path: '/api/mail/classify-imported', owner: 'IRDR-455', auth: 'session' },
 ]
 
 /** Proposal shape as the agent produces it, re-exported for API consumers. */
@@ -487,4 +497,219 @@ export interface LearningResponse {
 export interface AutonomyResponse {
   /** After PUT: the audit rows this request wrote (empty when nothing changed). */
   changes?: SettingsAuditItem[]
+}
+
+// ---------------------------------------------------------------- IRDR-455 additions: mailbox status and history import
+
+export type MailBackfillFolder = 'inbox' | 'sent'
+export type MailBackfillStatus = 'queued' | 'running' | 'done' | 'failed'
+
+/** One row of `mail_backfills`: the import cursor and counters of one folder. */
+export interface MailBackfillProgress {
+  folder: MailBackfillFolder
+  status: MailBackfillStatus
+  /** Last UID handled and the highest UID in the folder when the import started (null before the first chunk). */
+  lastUid: number | null
+  maxUid: number | null
+  listed: number
+  imported: number
+  /** Already known (dedupe by Message-ID or provider id). */
+  skipped: number
+  /** Auto-replies, bounces, bulk, own mail in INBOX, mail to ourselves in Sent. */
+  ignored: number
+  failed: number
+  ticketsCreated: number
+  lastError: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  updatedAt: string
+}
+
+/** The classify-only pass over imported tickets. */
+export interface MailClassifyProgress {
+  /** Imported tickets in total, with a case, still waiting, and given up on. */
+  imported: number
+  classified: number
+  pending: number
+  failed: number
+  /** A chunk job is queued, retrying or running. */
+  active: boolean
+  /** Why nothing is scheduled although tickets wait (no ANTHROPIC_API_KEY). */
+  blocked: string | null
+  lastError: string | null
+}
+
+export interface MailStatusResponse {
+  provider: 'imap' | 'fake'
+  mailbox: string
+  /** Live fetch: when it last ran, its summary (mail_cursors.last_result) and whether a run is pending. */
+  fetch: {
+    lastAt: string | null
+    lastResult: Record<string, unknown> | null
+    active: boolean
+  }
+  backfill: {
+    folders: MailBackfillProgress[]
+    active: boolean
+  }
+  classify: MailClassifyProgress
+  /** Closed tickets per case, imported and live together (for the "what do people write about" view). */
+  caseCounts: Partial<Record<CaseType, number>>
+}
+
+export interface MailFetchResponse {
+  ok: true
+  fetched: number
+  ingested: number
+  skipped: number
+  ignored: number
+  failed: number
+  ticketsCreated: number
+}
+
+export interface MailImportResponse {
+  ok: true
+  /** False when an import was already running or queued (nothing was changed). */
+  started: boolean
+  status: MailStatusResponse
+}
+
+export interface MailClassifyImportedResponse {
+  ok: true
+  /** False when nothing waits, a chunk is already pending, or the model key is missing (`reason` says which). */
+  started: boolean
+  reason: string | null
+  status: MailStatusResponse
+}
+
+// ---------------------------------------------------------------- IRDR-460 Claude token usage (appended; interface merges add optional fields only)
+
+export type ModelCallPurpose =
+  'agent_turn' | 'consistency_check' | 'kb_condensation' | 'history_classification' | 'eval'
+export type ModelCallStatus = 'ok' | 'refusal' | 'error'
+
+/** Sum over a set of calls. `costUsd` is null when any call had no known price. */
+export interface UsageTotals {
+  calls: number
+  inputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  outputTokens: number
+  costUsd: number | null
+}
+
+/** One row of `model_calls`: one Claude API call. */
+export interface ModelCallRow {
+  id: string
+  ticketId: string | null
+  runId: string | null
+  purpose: ModelCallPurpose
+  model: string
+  /** 1-based turn inside the agent loop; null for single calls. */
+  turn: number | null
+  attempt: number | null
+  status: ModelCallStatus
+  stopReason: string | null
+  error: string | null
+  inputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  outputTokens: number
+  costUsd: number | null
+  durationMs: number | null
+  createdAt: string
+}
+
+/** One row of `agent_tool_calls`: one tool call inside the agent loop. */
+export interface ToolCallRow {
+  id: string
+  runId: string | null
+  ticketId: string | null
+  /** The turn whose response asked for this tool. */
+  modelCallId: string | null
+  turn: number
+  tool: string
+  source: string | null
+  ok: boolean
+  input: Record<string, unknown>
+  resultChars: number
+  /** Tokens the result added to the context (measured on the next turn, else estimated). */
+  contextTokens: number | null
+  contextMeasured: boolean
+  durationMs: number | null
+  createdAt: string
+}
+
+export interface TicketUsage {
+  totals: UsageTotals
+  byPurpose: Partial<Record<ModelCallPurpose, UsageTotals>>
+  /** Newest first. */
+  calls: ModelCallRow[]
+  toolCalls: ToolCallRow[]
+}
+
+export interface TicketDetailResponse {
+  /** Every Claude call of the ticket with its tool calls; empty totals when nothing was recorded. */
+  usage?: TicketUsage
+}
+
+export interface AgentRunRow {
+  /** Uncached input tokens of the latest attempt (rows before IRDR-460: the sum of all input kinds). */
+  inputTokens?: number | null
+  outputTokens?: number | null
+  cacheReadTokens?: number | null
+  cacheCreationTokens?: number | null
+  costUsd?: number | null
+}
+
+// ---------------------------------------------------------------- GET /api/usage (IRDR-460)
+
+export interface UsageQuery {
+  /** Window in days ending now; default 30, max 365. */
+  days?: number
+}
+
+export interface UsageDay extends UsageTotals {
+  /** Local date (YYYY-MM-DD). */
+  date: string
+  /** Distinct tickets with at least one call that day. */
+  tickets: number
+}
+
+export interface UsageToolStat {
+  tool: string
+  calls: number
+  failed: number
+  /** Sum of context tokens over the window. */
+  contextTokens: number
+  avgContextTokens: number | null
+  avgDurationMs: number | null
+}
+
+export interface UsageTicketStat extends UsageTotals {
+  ticketId: string
+  displayNumber: number | null
+  customerName: string | null
+  caseType: CaseType | null
+  /** Distinct agent runs with at least one call. */
+  runs: number
+}
+
+export interface UsageResponse {
+  days: number
+  from: string
+  to: string
+  totals: UsageTotals
+  /** Distinct tickets with at least one call in the window. */
+  tickets: number
+  /** Agent runs with at least one call in the window. */
+  runs: number
+  byPurpose: Partial<Record<ModelCallPurpose, UsageTotals>>
+  byModel: { model: string; totals: UsageTotals }[]
+  /** One entry per day of the window, oldest first, days without calls included. */
+  series: UsageDay[]
+  /** Most used tools first. */
+  tools: UsageToolStat[]
+  /** Most expensive tickets first (10). */
+  topTickets: UsageTicketStat[]
 }

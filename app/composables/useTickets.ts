@@ -110,6 +110,8 @@ export async function useClosedTickets(filters: Ref<ClosedFilters>) {
     error: first.error,
     refresh: first.refresh,
     items,
+    /** Closed tickets per case under the current filters (IRDR-455). */
+    caseCounts: computed(() => first.data.value?.caseCounts ?? {}),
     hasMore: computed(() => nextCursor.value != null),
     loadingMore,
     loadMore,

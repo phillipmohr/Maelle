@@ -8,6 +8,8 @@ import { ACTION_TYPES, ACTIONS, type ActionType } from '#shared/actions'
 import type { ConsistencyCheckRequest, ConsistencyCheckResponse } from '#shared/api'
 import { EM_DASH_RE } from '#shared/proposal'
 import type { ModelClient } from './model/types'
+import { ticketIdOrNull, trackModelCall } from '../usage/record'
+import type { UsageSink } from '../usage/types'
 
 type Mismatch = ConsistencyCheckResponse['mismatches'][number]
 
@@ -194,6 +196,7 @@ export async function modelConsistencyCheck(
   req: ConsistencyCheckRequest,
   model: ModelClient,
   modelId: string,
+  usage: UsageSink | null = null,
 ): Promise<Mismatch[]> {
   const actions = (req.enabledActions ?? [])
     .filter((a) => (ACTION_TYPES as readonly string[]).includes(a.type))
@@ -202,20 +205,25 @@ export async function modelConsistencyCheck(
         `- ${a.type} (${ACTIONS[a.type as ActionType].label}): ${JSON.stringify(a.params ?? {})}`,
     )
     .join('\n')
-  const response = await model.create({
-    model: modelId,
-    max_tokens: 2_000,
-    system:
-      'You check a customer support reply against the actions that will actually run when it is sent. Report a mismatch when the reply promises, states or implies something no enabled action does (a refund, a cancellation, a deletion, a coupon, a release notice, a ticket, a removal), when an enabled action does something the reply does not tell the customer, or when amounts, dates, plan names or profiles in the reply contradict the action params. Severity error for promises without an action and contradictions, warning for omissions. Report through the report_mismatches tool only; an empty list means the reply is consistent.',
-    tools: [REPORT_TOOL],
-    tool_choice: { type: 'auto' },
-    messages: [
-      {
-        role: 'user',
-        content: `Enabled actions:\n${actions || '(none)'}\n\nReply:\n"""\n${req.replyBody}\n"""\n\nCall report_mismatches.`,
-      },
-    ],
-  })
+  const response = await trackModelCall(
+    usage,
+    { purpose: 'consistency_check', model: modelId, ticketId: ticketIdOrNull(req.ticketId) },
+    () =>
+      model.create({
+        model: modelId,
+        max_tokens: 2_000,
+        system:
+          'You check a customer support reply against the actions that will actually run when it is sent. Report a mismatch when the reply promises, states or implies something no enabled action does (a refund, a cancellation, a deletion, a coupon, a release notice, a ticket, a removal), when an enabled action does something the reply does not tell the customer, or when amounts, dates, plan names or profiles in the reply contradict the action params. Severity error for promises without an action and contradictions, warning for omissions. Report through the report_mismatches tool only; an empty list means the reply is consistent.',
+        tools: [REPORT_TOOL],
+        tool_choice: { type: 'auto' },
+        messages: [
+          {
+            role: 'user',
+            content: `Enabled actions:\n${actions || '(none)'}\n\nReply:\n"""\n${req.replyBody}\n"""\n\nCall report_mismatches.`,
+          },
+        ],
+      }),
+  )
   const use = response.content.find(
     (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use' && b.name === 'report_mismatches',
   )
@@ -233,7 +241,13 @@ export async function modelConsistencyCheck(
 
 export async function consistencyCheck(
   req: ConsistencyCheckRequest,
-  deps: { model: ModelClient | null; modelId: string; timeoutMs?: number },
+  deps: {
+    model: ModelClient | null
+    modelId: string
+    timeoutMs?: number
+    /** Token rows of the check (IRDR-460); null records nothing. */
+    usage?: UsageSink | null
+  },
 ): Promise<ConsistencyCheckResponse> {
   const rules = ruleBasedConsistencyCheck(req)
   if (!deps.model || deps.model.kind === 'unavailable') return { mismatches: rules }
@@ -242,7 +256,7 @@ export async function consistencyCheck(
       setTimeout(() => reject(new Error('consistency model timeout')), deps.timeoutMs ?? 20_000),
     )
     const fromModel = await Promise.race([
-      modelConsistencyCheck(req, deps.model, deps.modelId),
+      modelConsistencyCheck(req, deps.model, deps.modelId, deps.usage ?? null),
       timeout,
     ])
     return { mismatches: dedupe([...rules, ...fromModel]) }

@@ -20,7 +20,7 @@ describe('provider selection', () => {
     const imap = mailConfigFromEnv({ MAIL_PASSWORD: 'pw' })
     expect(imap.provider).toBe('imap')
     expect(imap.mailbox).toBe('support@instaradar.app')
-    expect(imap.fromName).toBe('InstaRadar Support')
+    expect(imap.fromName).toBe('Anastasia at InstaRadar')
     expect(imap.imap).toEqual({
       host: 'mail.privateemail.com',
       port: 993,
@@ -140,5 +140,60 @@ describe('DirectoryMailProvider', () => {
     expect(await p.findSentByRfcMessageId('<dir-1@instaradar.app>')).toEqual(sent)
     // Sent copies never show up as inbound.
     expect((await p.listNew(second.nextCursor, listOpts)).messages).toEqual([])
+  })
+})
+
+describe('history import listing (fake)', () => {
+  it('pages a folder by position, resumes after a cursor and restarts on a new generation', async () => {
+    const p = new FakeMailProvider()
+    for (let i = 0; i < 5; i++) {
+      p.inject(
+        buildEml({
+          from: 'a@example.com',
+          subject: `m${i}`,
+          messageId: `<m${i}@example.com>`,
+          text: 'x',
+        }),
+      )
+    }
+    const first = await p.listRange({
+      folder: 'inbox',
+      afterUid: null,
+      uidValidity: null,
+      limit: 2,
+    })
+    expect(first).toMatchObject({ uidValidity: 'fake-inbox', maxUid: 5, lastUid: 2, reset: false })
+    expect(first.messages.map((m) => [m.uid, m.folder])).toEqual([
+      [1, 'inbox'],
+      [2, 'inbox'],
+    ])
+    const second = await p.listRange({
+      folder: 'inbox',
+      afterUid: first.lastUid,
+      uidValidity: first.uidValidity,
+      limit: 10,
+    })
+    expect(second.messages.map((m) => m.uid)).toEqual([3, 4, 5])
+    expect(second.lastUid).toBe(5)
+    const end = await p.listRange({
+      folder: 'inbox',
+      afterUid: 5,
+      uidValidity: 'fake-inbox',
+      limit: 10,
+    })
+    expect(end).toMatchObject({ messages: [], lastUid: 5, maxUid: 5 })
+    // The cursor belongs to another generation: start over.
+    const again = await p.listRange({ folder: 'inbox', afterUid: 5, uidValidity: 'old', limit: 10 })
+    expect(again.reset).toBe(true)
+    expect(again.messages).toHaveLength(5)
+    // The Sent folder is empty until something was sent.
+    expect(
+      await p.listRange({ folder: 'sent', afterUid: null, uidValidity: null, limit: 5 }),
+    ).toMatchObject({
+      messages: [],
+      maxUid: 0,
+      lastUid: 0,
+    })
+    expect(await p.fetch(first.messages[0]!)).toMatchObject({ threadId: null })
   })
 })

@@ -13,10 +13,16 @@ export interface MailCursor {
   meta?: Record<string, unknown>
 }
 
+export type MailFolder = 'inbox' | 'sent'
+
 export interface ProviderMessageRef {
   /** Gmail message id · IMAP `${uidValidity}:${uid}` · fake id. Stored as messages.provider_message_id. */
   id: string
   threadId?: string | null
+  /** Folder the message lives in (history import); INBOX when absent. */
+  folder?: MailFolder
+  /** Position in the folder (IMAP UID, or index + 1 for the fakes); the history import's cursor. */
+  uid?: number
 }
 
 export interface ListNewOptions {
@@ -33,6 +39,27 @@ export interface ListNewResult {
   reset: boolean
 }
 
+/** History import (IRDR-455): one page of a folder by UID, oldest first. */
+export interface ListRangeOptions {
+  folder: MailFolder
+  /** Only UIDs above this; null starts at the beginning. Ignored when `uidValidity` no longer matches. */
+  afterUid: number | null
+  /** UIDVALIDITY the cursor belongs to (null on the first page). */
+  uidValidity: string | null
+  limit: number
+}
+
+export interface ListRangeResult {
+  messages: ProviderMessageRef[]
+  uidValidity: string
+  /** Highest UID in the folder right now (progress denominator). */
+  maxUid: number
+  /** Cursor after this page: the last listed UID, or `maxUid` when nothing was left to list. */
+  lastUid: number
+  /** True when the cursor's UIDVALIDITY did not match and the listing restarted from the beginning. */
+  reset: boolean
+}
+
 export interface FetchedRaw {
   raw: Buffer
   threadId: string | null
@@ -42,6 +69,8 @@ export interface OutgoingAttachment {
   filename: string
   content: Buffer
   contentType?: string
+  /** Content-ID for an inline image referenced as `cid:` from the HTML part. */
+  cid?: string
 }
 
 export interface OutgoingMail {
@@ -69,6 +98,8 @@ export interface SendResult {
 export interface MailProvider {
   readonly kind: MailProviderKind
   listNew(cursor: MailCursor | null, opts: ListNewOptions): Promise<ListNewResult>
+  /** History import: a page of INBOX or the Sent folder by UID, oldest first. */
+  listRange(opts: ListRangeOptions): Promise<ListRangeResult>
   fetch(ref: ProviderMessageRef): Promise<FetchedRaw>
   /** Sends and makes the mail appear in the mailbox's Sent folder like a normal reply. */
   send(mail: OutgoingMail): Promise<SendResult>

@@ -4,7 +4,7 @@
  * range, columns Ticket · Customer · Case · Decision · What ran · Closed, grouped by day, older rows
  * load as you scroll. A row opens the ticket read-only.
  */
-import type { TicketListItem } from '#shared/api'
+import type { TicketListItem, TicketListResponse } from '#shared/api'
 import { CASE_TYPE_LIST, caseShortLabel } from '#shared/case-types'
 import {
   CLOSED_CHIPS,
@@ -22,12 +22,22 @@ const props = defineProps<{
   hasMore: boolean
   loadingMore: boolean
   pending?: boolean
+  /** Closed tickets per case under the current filters, shown on the case chips. */
+  caseCounts?: NonNullable<TicketListResponse['caseCounts']>
 }>()
 const emit = defineEmits<{ loadMore: []; open: [item: TicketListItem] }>()
 const filters = defineModel<ClosedTableFilters>('filters', { required: true })
 const filtersOpen = defineModel<boolean>('filtersOpen', { default: false })
 
 const groups = computed(() => dayGroups(props.items, props.now))
+const counted = computed(() =>
+  CASE_TYPE_LIST.map((c) => ({ ...c, n: props.caseCounts?.[c.key] ?? 0 })).filter(
+    (c) => c.n > 0 || filters.value.caseType === c.key,
+  ),
+)
+const countedTotal = computed(() =>
+  Object.values(props.caseCounts ?? {}).reduce((a, b) => a + (b ?? 0), 0),
+)
 const GRID =
   'grid grid-cols-[84px_minmax(0,1fr)_minmax(0,1fr)_190px_minmax(0,1.5fr)_72px] gap-[18px] px-5'
 
@@ -107,18 +117,22 @@ function setDate(key: 'from' | 'to', v: string) {
                     interactive
                     :active="!filters.caseType"
                     @click="setCase(null)"
-                    >Any</Chip
+                    >Any<template v-if="countedTotal"> · {{ countedTotal }}</template></Chip
                   >
                   <Chip
-                    v-for="c in CASE_TYPE_LIST"
+                    v-for="c in caseCounts ? counted : CASE_TYPE_LIST"
                     :key="c.key"
                     variant="filter"
                     interactive
                     :active="filters.caseType === c.key"
                     @click="setCase(c.key)"
-                    >{{ c.shortLabel }}</Chip
+                    >{{ c.shortLabel
+                    }}<template v-if="caseCounts"> · {{ caseCounts[c.key] ?? 0 }}</template></Chip
                   >
                 </div>
+                <span v-if="caseCounts" class="text-caption text-fg-muted"
+                  >Counts follow the decision and date filters · imported history included</span
+                >
               </div>
               <div class="flex flex-col gap-2">
                 <Eyebrow>Closed</Eyebrow>
@@ -199,7 +213,9 @@ function setDate(key: 'from' | 'to', v: string) {
           >
           <span v-if="t.decisionNote" class="text-[11px] text-fg-muted">{{ t.decisionNote }}</span>
         </span>
-        <span class="text-caption leading-[1.45] text-fg-muted">{{ t.whatRan ?? '' }}</span>
+        <span class="text-caption leading-[1.45] text-fg-muted">{{
+          t.whatRan ?? (t.importedAt ? 'Imported from the mailbox history' : '')
+        }}</span>
         <Mono class="text-[11px]">{{ t.closedAt ? clockTime(t.closedAt) : '' }}</Mono>
       </NuxtLink>
     </template>

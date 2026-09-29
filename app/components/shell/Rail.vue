@@ -35,6 +35,12 @@ const nav = computed(() => [
     count: null,
     active: route.path.startsWith('/anastasai/playbook'),
   },
+  {
+    name: 'Costs',
+    to: '/anastasai/costs',
+    count: null,
+    active: route.path.startsWith('/anastasai/costs'),
+  },
 ])
 </script>
 

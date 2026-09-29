@@ -45,6 +45,15 @@ export type IngestResult =
   | { outcome: 'duplicate' }
   | { outcome: 'ignored'; reason: IgnoreReason }
 
+export interface IngestOptions {
+  /**
+   * `import` (history import, IRDR-455): the mail is old and was answered long ago. A new ticket is
+   * created closed with `imported_at` set, an existing ticket keeps its status, no agent run is
+   * enqueued, and the 30-day threading window is measured from the mail's own date.
+   */
+  mode: 'live' | 'import'
+}
+
 class AlreadyIngestedError extends Error {
   constructor() {
     super('message already ingested')
@@ -52,7 +61,7 @@ class AlreadyIngestedError extends Error {
   }
 }
 
-async function alreadyKnown(db: Db, providerMessageId: string): Promise<boolean> {
+export async function alreadyKnown(db: Db, providerMessageId: string): Promise<boolean> {
   const row = await db.one(
     `select 1 as x from public.messages where provider_message_id = $1
      union all
@@ -183,7 +192,7 @@ export async function resolveAppId(db: Db, mailbox: string): Promise<string> {
   return row.id
 }
 
-function clampReceivedAt(date: Date | null, now: Date): Date {
+export function clampReceivedAt(date: Date | null, now: Date): Date {
   if (!date) return now
   return date.getTime() > now.getTime() ? now : date
 }
@@ -192,9 +201,11 @@ export async function ingestRaw(
   ctx: MailContext,
   raw: Buffer,
   ref: { providerMessageId: string; providerThreadId?: string | null },
+  opts: IngestOptions = { mode: 'live' },
 ): Promise<IngestResult> {
   const { db, config } = ctx
   const now = ctx.now()
+  const importing = opts.mode === 'import'
   const parsed = await parseMail(raw)
   const messageId = parsed.messageId ?? syntheticMessageId(raw)
 
@@ -231,13 +242,29 @@ export async function ingestRaw(
     return await db.transaction(async (tx) => {
       const thread = await findThreadTicket(tx, parsed, {
         appId,
-        now,
+        // History: the window is measured from the mail's date, not from today, on both sides.
+        now: importing ? receivedAt : now,
+        bounded: importing,
         providerThreadId: ref.providerThreadId ?? null,
       })
       let ticketId: string
       let createdTicket = false
       let trigger: AgentTrigger | null
-      if (thread) {
+      if (thread && importing) {
+        // An old mail joining a thread: the timestamps widen, the status and the queue stay as they are.
+        ticketId = thread.ticketId
+        trigger = null
+        await tx.query(
+          `update public.tickets set
+             first_message_at = least(coalesce(first_message_at, $2), $2),
+             last_message_at = greatest(coalesce(last_message_at, $2), $2),
+             last_customer_message_at = greatest(coalesce(last_customer_message_at, $2), $2),
+             closed_at = case when status = 'closed' and imported_at is not null
+               then greatest(coalesce(closed_at, $2), $2) else closed_at end
+           where id = $1`,
+          [ticketId, receivedAt],
+        )
+      } else if (thread) {
         ticketId = thread.ticketId
         const ticket = await tx.one<{ status: TicketStatus }>(
           'select status from public.tickets where id = $1 for update',
@@ -256,6 +283,25 @@ export async function ingestRaw(
              last_customer_message_at = greatest(coalesce(last_customer_message_at, $3), $3)
            where id = $1`,
           [ticketId, decision.next, receivedAt],
+        )
+      } else if (importing) {
+        // History: closed on arrival, marked imported, classified later by the classify-only pass.
+        ticketId = randomUUID()
+        createdTicket = true
+        trigger = null
+        await tx.query(
+          `insert into public.tickets (id, app_id, customer_email, customer_name, subject, status,
+             first_message_at, last_message_at, last_customer_message_at, closed_at, imported_at, created_at)
+           values ($1, $2, $3, $4, $5, 'closed', $6, $6, $6, $6, $7, $6)`,
+          [
+            ticketId,
+            appId,
+            from.address,
+            from.name,
+            parsed.subject ?? '(no subject)',
+            receivedAt,
+            now,
+          ],
         )
       } else {
         ticketId = randomUUID()
@@ -281,8 +327,8 @@ export async function ingestRaw(
       const inserted = await tx.query<{ id: string }>(
         `insert into public.messages (id, ticket_id, direction, provider_message_id, provider_thread_id, message_id,
            in_reply_to, "references", from_email, from_name, to_emails, cc_emails, subject, text_body, html_body,
-           text_stripped, attachments, headers, raw_storage_path, received_at)
-         values ($1, $2, 'in', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19)
+           text_stripped, attachments, headers, raw_storage_path, received_at, created_at)
+         values ($1, $2, 'in', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19, $20)
          on conflict do nothing returning id`,
         [
           messageRowId,
@@ -304,6 +350,8 @@ export async function ingestRaw(
           JSON.stringify(parsed.headers),
           rawPath,
           receivedAt,
+          // History: the thread is ordered by created_at, so old mail keeps its own date.
+          importing ? receivedAt : now,
         ],
       )
       if (!inserted[0]) throw new AlreadyIngestedError()
