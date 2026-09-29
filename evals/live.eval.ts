@@ -6,6 +6,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { agentRuntimeConfig } from '../server/agent/config'
 import { createAnthropicModelClient } from '../server/agent/model/anthropic'
+import { SUBMIT_TOOL } from '../server/agent/tools/definitions'
 import { totalInputTokens, totalsOf } from '../shared/usage'
 import { ALL_FIXTURES, CASE_2_REFUND } from './fixtures'
 import { checkExpectations, median, runFixture, runFollowUp, type HarnessRun } from './harness'
@@ -38,6 +39,11 @@ function record(run: HarnessRun, failures: string[]) {
     stage: p ? `${p.stage}${p.customerConfirmationNeeded ? ' (confirm)' : ''}` : '-',
     s: Math.round(run.durationMs / 1000),
     calls: usage.calls,
+    tools:
+      run.usage.toolCalls
+        .filter((t) => t.tool !== SUBMIT_TOOL)
+        .map((t) => t.tool)
+        .join(', ') || '-',
     tokens: totalInputTokens(usage) + usage.outputTokens,
     usd: usage.costUsd == null ? '-' : usage.costUsd.toFixed(3),
     result: failures.length

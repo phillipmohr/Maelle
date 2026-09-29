@@ -110,19 +110,28 @@ export const INSTARADAR = {
   },
 } as const
 
-/** Claude models. */
+/** Claude models (prices in shared/pricing.ts). */
 export const MODELS = {
-  /** The agent run: research and drafting. */
-  agent: 'claude-fable-5-1',
-  /** Consistency check and the learning loop's condensations. */
-  small: 'claude-sonnet-5',
+  /** The agent run: research and drafting, at AGENT.effort (IRDR-463). */
+  agent: 'claude-sonnet-5-5',
+  /** Consistency check and the learning loop's condensations, low effort. */
+  small: 'claude-sonnet-5-5',
   /** Classify-only pass over imported history tickets (one short call per ticket, low effort). */
-  classify: 'claude-opus-5-5',
+  classify: 'claude-sonnet-5-5',
 } as const
+
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 /** Agent tuning. */
 export const AGENT = {
   maxIterations: 16,
+  /** Thinking depth of the agent run (`output_config.effort`); the model default would be high. */
+  effort: 'medium' as Effort,
+  /**
+   * From this research turn on, the tool results carry a nudge to submit with what is known unless
+   * one specific fact is still missing. The hard stop stays `maxIterations`.
+   */
+  researchNudgeTurn: 4,
   sourceTimeoutMs: 20_000,
   knowledgeCacheTtlMs: 5 * 60_000,
 } as const

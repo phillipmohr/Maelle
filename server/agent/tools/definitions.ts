@@ -104,7 +104,7 @@ export function researchToolDefinitions(): Anthropic.Tool[] {
             type: 'integer',
             minimum: 1,
             maximum: 730,
-            description: 'Look-back window, default 400',
+            description: 'Look-back window, default 180',
           },
         },
         ['customerId'],
@@ -156,7 +156,7 @@ export function researchToolDefinitions(): Anthropic.Tool[] {
           enum: ['error', 'warning', 'all'],
           description: 'Default warning (errors + warnings)',
         },
-        limit: { type: 'integer', minimum: 1, maximum: 200 },
+        limit: { type: 'integer', minimum: 1, maximum: 200, description: 'Default 60' },
       }),
     },
     {
@@ -225,7 +225,8 @@ export const TOOL_SOURCE: Record<string, ProgressSource> = {
   email_history: 'email',
 }
 
-const MAX_RESULT_CHARS = 40_000
+/** A tool result is read by every later turn, so it stays small (about 3K tokens). */
+export const MAX_RESULT_CHARS = 12_000
 
 export function compactJson(value: unknown, max = MAX_RESULT_CHARS): string {
   const s = JSON.stringify(value, (_k, v) => (v === undefined ? null : v))
@@ -276,7 +277,7 @@ export async function executeResearchTool(
       case 'stripe_events': {
         const events = await ctx.tools.stripe.listEvents(
           input.customerId as string,
-          (input.days as number | undefined) ?? 400,
+          (input.days as number | undefined) ?? 180,
         )
         return { source, isError: false, content: compactJson({ count: events.length, events }) }
       }
@@ -320,7 +321,7 @@ export async function executeResearchTool(
           userId: input.userId as string | undefined,
           handle: input.handle as string | undefined,
           level: (input.level as 'error' | 'warning' | 'all' | undefined) ?? 'warning',
-          limit: (input.limit as number | undefined) ?? 100,
+          limit: (input.limit as number | undefined) ?? 60,
         })
         return { source, isError: false, content: compactJson({ count: lines.length, lines }) }
       }

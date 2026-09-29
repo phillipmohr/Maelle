@@ -182,8 +182,9 @@ describe('window aggregation', () => {
     const detail = seedTicketDetail(seed, '4825')!
     expect(detail.usage?.calls.length).toBeGreaterThanOrEqual(3)
     expect(detail.usage?.toolCalls.map((t) => t.tool)).toContain('submit_proposal')
-    expect(detail.usage?.totals.costUsd).toBeCloseTo(0.4189, 4)
-    expect(detail.runs[0]?.costUsd).toBeCloseTo(0.4189, 4)
+    // three seed turns on the agent model: 0.0359 + 0.01836 + 0.0324
+    expect(detail.usage?.totals.costUsd).toBeCloseTo(0.08666, 4)
+    expect(detail.runs[0]?.costUsd).toBeCloseTo(0.08666, 4)
     const r = seedUsageResponse(seed, usageWindow(30, now))
     expect(r.totals.calls).toBeGreaterThan(20)
     expect(r.byPurpose.consistency_check?.calls).toBeGreaterThan(0)

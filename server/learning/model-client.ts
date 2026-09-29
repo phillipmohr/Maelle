@@ -211,7 +211,10 @@ export function createAnthropicModelClient(opts: {
                   }),
                 },
               ],
-              output_config: { format: { type: 'json_schema', schema: KB_JSON_SCHEMA } },
+              output_config: {
+                effort: 'low',
+                format: { type: 'json_schema', schema: KB_JSON_SCHEMA },
+              },
             }),
           (msg, data) => logger(`${msg} ${data instanceof Error ? data.message : ''}`),
         )

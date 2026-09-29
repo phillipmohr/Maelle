@@ -216,6 +216,7 @@ export async function modelConsistencyCheck(
           'You check a customer support reply against the actions that will actually run when it is sent. Report a mismatch when the reply promises, states or implies something no enabled action does (a refund, a cancellation, a deletion, a coupon, a release notice, a ticket, a removal), when an enabled action does something the reply does not tell the customer, or when amounts, dates, plan names or profiles in the reply contradict the action params. Severity error for promises without an action and contradictions, warning for omissions. Report through the report_mismatches tool only; an empty list means the reply is consistent.',
         tools: [REPORT_TOOL],
         tool_choice: { type: 'auto' },
+        output_config: { effort: 'low' },
         messages: [
           {
             role: 'user',

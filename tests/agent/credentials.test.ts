@@ -111,8 +111,10 @@ describe('agent credentials (runtime)', () => {
 
   it('uses the models and the InstaRadar project fixed in shared/config.ts', () => {
     const c = agentRuntimeConfig({} as NodeJS.ProcessEnv)
-    expect(c.model).toBe('claude-fable-5-1')
-    expect(c.smallModel).toBe('claude-sonnet-5')
+    expect(c.model).toBe('claude-sonnet-5-5')
+    expect(c.smallModel).toBe('claude-sonnet-5-5')
+    expect(c.effort).toBe('medium')
+    expect(c.researchNudgeTurn).toBe(4)
     expect(c.vercelTeamSlug).toBe('phillip-mohrs-projects')
     expect(c.vercelProject).toBe('instaradar')
     expect(c.supportMailbox).toBe('support@instaradar.app')

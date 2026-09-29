@@ -13,6 +13,7 @@ import { SUBMIT_TOOL } from '../../server/agent/tools/definitions'
 import { createAnthropicModelClient } from '../../server/learning/model-client'
 import { createMemoryUsageSink } from '../../server/usage/memory'
 import { trackModelCall } from '../../server/usage/record'
+import { MODELS } from '../../shared/config'
 import { costUsd } from '../../shared/pricing'
 import { CASE_1_CANCELLATION } from '../../evals/fixtures/cases'
 import { harnessDeps, runFixture, seedStore } from '../../evals/harness'
@@ -20,6 +21,13 @@ import { harnessDeps, runFixture, seedStore } from '../../evals/harness'
 const good = CASE_1_CANCELLATION.scripted.proposal
 const submit: ScriptedTurn = { toolCalls: [{ name: SUBMIT_TOOL, input: good }] }
 const TICKET = '11111111-2222-4333-8444-555555555555'
+/** What one scripted turn (1000 in, 200 out) costs on the agent model. */
+const TURN_COST = costUsd(MODELS.agent, {
+  inputTokens: 1000,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+  outputTokens: 200,
+})!
 
 /** The scripted client with growing input tokens, so the context measurement has something to see. */
 function growingModel(turns: ScriptedTurn[], perTurn: number[]): ModelClient {
@@ -50,19 +58,11 @@ describe('agent run usage', () => {
         turn: i + 1,
         attempt: 1,
         status: 'ok',
-        model: 'claude-fable-5-1',
+        model: MODELS.agent,
         inputTokens: 1000,
         outputTokens: 200,
       })
-      expect(c.costUsd).toBeCloseTo(
-        costUsd('claude-fable-5-1', {
-          inputTokens: 1000,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          outputTokens: 200,
-        })!,
-        6,
-      )
+      expect(c.costUsd).toBeCloseTo(TURN_COST, 6)
       expect(c.durationMs).toBeGreaterThanOrEqual(0)
     }
     const tools = r.usage.toolCalls
@@ -80,7 +80,7 @@ describe('agent run usage', () => {
     expect(run.inputTokens).toBe(1000 * calls.length)
     expect(run.outputTokens).toBe(200 * calls.length)
     expect(run.cacheReadTokens).toBe(0)
-    expect(run.costUsd).toBeCloseTo(0.02 * calls.length, 6)
+    expect(run.costUsd).toBeCloseTo(TURN_COST * calls.length, 6)
   })
 
   it('measures the context a tool result added from the next turn and splits it by size', async () => {
@@ -121,7 +121,7 @@ describe('agent run usage', () => {
     expect(deps.usage.modelCalls).toHaveLength(1)
     expect(deps.usage.modelCalls[0]).toMatchObject({ status: 'refusal', stopReason: 'refusal' })
     expect(store.runs[0]).toMatchObject({ status: 'failed', inputTokens: 1000, outputTokens: 200 })
-    expect(store.runs[0]!.costUsd).toBeCloseTo(0.02, 6)
+    expect(store.runs[0]!.costUsd).toBeCloseTo(TURN_COST, 6)
   })
 
   it('records an API error as a zero-cost error row and lets the run fail as retryable', async () => {
