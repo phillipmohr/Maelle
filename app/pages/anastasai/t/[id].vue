@@ -124,7 +124,9 @@ const barNote = computed(() => {
     case 'snoozed':
       return 'Snoozed · it comes back on its own, or now'
     case 'closed':
-      return `Closed · ${t?.resolution?.replace(/_/g, ' ') ?? 'done'} · read only`
+      return t?.importedAt && !t.resolution
+        ? 'Closed · imported from the mailbox history · re-open to answer'
+        : `Closed · ${t?.resolution?.replace(/_/g, ' ') ?? 'done'} · read only`
     default:
       return ''
   }
@@ -220,6 +222,13 @@ registerCommands([
     label: 'Re-run research',
     group: 'Ticket',
     when: () => view.value !== 'closed' && view.value !== 'executing',
+    run: () => decision.rerun(),
+  },
+  {
+    id: 'ticket.cmd.reopen',
+    label: 'Re-open and draft a reply',
+    group: 'Ticket',
+    when: () => view.value === 'closed',
     run: () => decision.rerun(),
   },
   {

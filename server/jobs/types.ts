@@ -132,6 +132,19 @@ export const JOB_TYPE_DEFAULTS: Record<JobType, JobTypeDefaults> = {
     backoffBaseMs: 5 * MINUTE,
     backoffCapMs: 30 * MINUTE,
   },
+  // History import chunks: a chunk that dies is repeated (the cursor only moves past handled mail).
+  backfill_mail: {
+    maxAttempts: 3,
+    lockTtlSeconds: 300,
+    backoffBaseMs: MINUTE,
+    backoffCapMs: 5 * MINUTE,
+  },
+  classify_imported: {
+    maxAttempts: 3,
+    lockTtlSeconds: 600,
+    backoffBaseMs: MINUTE,
+    backoffCapMs: 5 * MINUTE,
+  },
 }
 
 export function jobDefaults(type: JobType): JobTypeDefaults {

@@ -59,13 +59,13 @@ isOneToOne: false
                   ]
                 },"agent_runs": {
                   Row: {
-                    "created_at": string,"duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"input_tokens": number | null,"model": string | null,"output_tokens": number | null,"progress": NonNullable<Json>,"proposal_id": string | null,"started_at": string | null,"status": string,"ticket_id": string,"trigger": string
+                    "attempt": number,"created_at": string,"duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"input_tokens": number | null,"job_id": string | null,"model": string | null,"output_tokens": number | null,"progress": NonNullable<Json>,"proposal_id": string | null,"started_at": string | null,"status": string,"ticket_id": string,"trigger": string
                   }
                   Insert: {
-                    "created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id": string,"trigger": string
+                    "attempt"?: number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id": string,"trigger": string
                   }
                   Update: {
-                    "created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id"?: string,"trigger"?: string
+                    "attempt"?: number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"input_tokens"?: number | null,"job_id"?: string | null,"model"?: string | null,"output_tokens"?: number | null,"progress"?: NonNullable<Json>,"proposal_id"?: string | null,"started_at"?: string | null,"status"?: string,"ticket_id"?: string,"trigger"?: string
                   }
                   Relationships: [
                     {
@@ -171,19 +171,172 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"messages": {
+                },"job_heartbeats": {
                   Row: {
-                    "attachments": NonNullable<Json>,"cc_emails": (string)[],"created_at": string,"direction": string,"from_email": string,"from_name": string | null,"html_body": string | null,"id": string,"in_reply_to": string | null,"message_id": string | null,"provider_message_id": string | null,"raw_storage_path": string | null,"received_at": string | null,"references": (string)[],"sent_at": string | null,"sent_by": string | null,"subject": string | null,"text_body": string | null,"ticket_id": string,"to_emails": (string)[],"translation": string | null
+                    "consecutive_failures": number,"created_at": string,"interval_seconds": number | null,"job": string,"last_alert_at": string | null,"last_error": string | null,"last_failed_at": string | null,"last_scheduled_at": string | null,"last_slot": string | null,"last_started_at": string | null,"last_succeeded_at": string | null,"updated_at": string
                   }
                   Insert: {
-                    "attachments"?: NonNullable<Json>,"cc_emails"?: (string)[],"created_at"?: string,"direction": string,"from_email": string,"from_name"?: string | null,"html_body"?: string | null,"id"?: string,"in_reply_to"?: string | null,"message_id"?: string | null,"provider_message_id"?: string | null,"raw_storage_path"?: string | null,"received_at"?: string | null,"references"?: (string)[],"sent_at"?: string | null,"sent_by"?: string | null,"subject"?: string | null,"text_body"?: string | null,"ticket_id": string,"to_emails"?: (string)[],"translation"?: string | null
+                    "consecutive_failures"?: number,"created_at"?: string,"interval_seconds"?: number | null,"job": string,"last_alert_at"?: string | null,"last_error"?: string | null,"last_failed_at"?: string | null,"last_scheduled_at"?: string | null,"last_slot"?: string | null,"last_started_at"?: string | null,"last_succeeded_at"?: string | null,"updated_at"?: string
                   }
                   Update: {
-                    "attachments"?: NonNullable<Json>,"cc_emails"?: (string)[],"created_at"?: string,"direction"?: string,"from_email"?: string,"from_name"?: string | null,"html_body"?: string | null,"id"?: string,"in_reply_to"?: string | null,"message_id"?: string | null,"provider_message_id"?: string | null,"raw_storage_path"?: string | null,"received_at"?: string | null,"references"?: (string)[],"sent_at"?: string | null,"sent_by"?: string | null,"subject"?: string | null,"text_body"?: string | null,"ticket_id"?: string,"to_emails"?: (string)[],"translation"?: string | null
+                    "consecutive_failures"?: number,"created_at"?: string,"interval_seconds"?: number | null,"job"?: string,"last_alert_at"?: string | null,"last_error"?: string | null,"last_failed_at"?: string | null,"last_scheduled_at"?: string | null,"last_slot"?: string | null,"last_started_at"?: string | null,"last_succeeded_at"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"job_runs": {
+                  Row: {
+                    "attempt": number,"created_at": string,"duration_ms": number | null,"error": string | null,"finished_at": string | null,"id": string,"job_id": string,"started_at": string,"status": string,"worker": string | null
+                  }
+                  Insert: {
+                    "attempt": number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"job_id": string,"started_at"?: string,"status"?: string,"worker"?: string | null
+                  }
+                  Update: {
+                    "attempt"?: number,"created_at"?: string,"duration_ms"?: number | null,"error"?: string | null,"finished_at"?: string | null,"id"?: string,"job_id"?: string,"started_at"?: string,"status"?: string,"worker"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "job_runs_job_id_fkey"
+      columns: ["job_id"]
+isOneToOne: false
+      referencedRelation: "jobs"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"jobs": {
+                  Row: {
+                    "attempts": number,"created_at": string,"dedupe_key": string | null,"finished_at": string | null,"id": string,"last_error": string | null,"lock_ttl_seconds": number,"locked_at": string | null,"locked_by": string | null,"max_attempts": number,"payload": NonNullable<Json>,"run_at": string,"status": string,"type": string,"updated_at": string
+                  }
+                  Insert: {
+                    "attempts"?: number,"created_at"?: string,"dedupe_key"?: string | null,"finished_at"?: string | null,"id"?: string,"last_error"?: string | null,"lock_ttl_seconds"?: number,"locked_at"?: string | null,"locked_by"?: string | null,"max_attempts"?: number,"payload"?: NonNullable<Json>,"run_at"?: string,"status"?: string,"type": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "attempts"?: number,"created_at"?: string,"dedupe_key"?: string | null,"finished_at"?: string | null,"id"?: string,"last_error"?: string | null,"lock_ttl_seconds"?: number,"locked_at"?: string | null,"locked_by"?: string | null,"max_attempts"?: number,"payload"?: NonNullable<Json>,"run_at"?: string,"status"?: string,"type"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"learning_events": {
+                  Row: {
+                    "created_at": string,"created_by": string | null,"id": string,"kind": string,"notion_page_id": string,"notion_url": string,"ticket_id": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"created_by"?: string | null,"id"?: string,"kind": string,"notion_page_id": string,"notion_url": string,"ticket_id": string
+                  }
+                  Update: {
+                    "created_at"?: string,"created_by"?: string | null,"id"?: string,"kind"?: string,"notion_page_id"?: string,"notion_url"?: string,"ticket_id"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "learning_events_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"mail_backfills": {
+                  Row: {
+                    "created_at": string,"failed": number,"finished_at": string | null,"folder": string,"ignored": number,"imported": number,"last_error": string | null,"last_uid": number | null,"listed": number,"mailbox": string,"max_uid": number | null,"skipped": number,"started_at": string | null,"status": string,"tickets_created": number,"uid_validity": string | null,"updated_at": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"failed"?: number,"finished_at"?: string | null,"folder": string,"ignored"?: number,"imported"?: number,"last_error"?: string | null,"last_uid"?: number | null,"listed"?: number,"mailbox": string,"max_uid"?: number | null,"skipped"?: number,"started_at"?: string | null,"status"?: string,"tickets_created"?: number,"uid_validity"?: string | null,"updated_at"?: string
+                  }
+                  Update: {
+                    "created_at"?: string,"failed"?: number,"finished_at"?: string | null,"folder"?: string,"ignored"?: number,"imported"?: number,"last_error"?: string | null,"last_uid"?: number | null,"listed"?: number,"mailbox"?: string,"max_uid"?: number | null,"skipped"?: number,"started_at"?: string | null,"status"?: string,"tickets_created"?: number,"uid_validity"?: string | null,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"mail_cursors": {
+                  Row: {
+                    "cursor": string | null,"cursor_meta": NonNullable<Json>,"last_fetch_at": string | null,"last_result": Json | null,"mailbox": string,"provider": string,"updated_at": string
+                  }
+                  Insert: {
+                    "cursor"?: string | null,"cursor_meta"?: NonNullable<Json>,"last_fetch_at"?: string | null,"last_result"?: Json | null,"mailbox": string,"provider": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "cursor"?: string | null,"cursor_meta"?: NonNullable<Json>,"last_fetch_at"?: string | null,"last_result"?: Json | null,"mailbox"?: string,"provider"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"mail_ignored": {
+                  Row: {
+                    "created_at": string,"from_email": string | null,"id": string,"message_id": string | null,"provider_message_id": string | null,"reason": string,"received_at": string | null,"subject": string | null
+                  }
+                  Insert: {
+                    "created_at"?: string,"from_email"?: string | null,"id"?: string,"message_id"?: string | null,"provider_message_id"?: string | null,"reason": string,"received_at"?: string | null,"subject"?: string | null
+                  }
+                  Update: {
+                    "created_at"?: string,"from_email"?: string | null,"id"?: string,"message_id"?: string | null,"provider_message_id"?: string | null,"reason"?: string,"received_at"?: string | null,"subject"?: string | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"mail_sends": {
+                  Row: {
+                    "attempts": number,"created_at": string,"idempotency_key": string,"kind": string,"last_error": string | null,"message_row_id": string | null,"provider_message_id": string | null,"rfc_message_id": string,"sent_at": string | null,"started_at": string,"status": string,"subject": string | null,"ticket_id": string | null,"to_emails": (string)[],"updated_at": string
+                  }
+                  Insert: {
+                    "attempts"?: number,"created_at"?: string,"idempotency_key": string,"kind": string,"last_error"?: string | null,"message_row_id"?: string | null,"provider_message_id"?: string | null,"rfc_message_id": string,"sent_at"?: string | null,"started_at"?: string,"status"?: string,"subject"?: string | null,"ticket_id"?: string | null,"to_emails"?: (string)[],"updated_at"?: string
+                  }
+                  Update: {
+                    "attempts"?: number,"created_at"?: string,"idempotency_key"?: string,"kind"?: string,"last_error"?: string | null,"message_row_id"?: string | null,"provider_message_id"?: string | null,"rfc_message_id"?: string,"sent_at"?: string | null,"started_at"?: string,"status"?: string,"subject"?: string | null,"ticket_id"?: string | null,"to_emails"?: (string)[],"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "mail_sends_message_row_id_fkey"
+      columns: ["message_row_id"]
+isOneToOne: false
+      referencedRelation: "messages"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "mail_sends_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"messages": {
+                  Row: {
+                    "attachments": NonNullable<Json>,"cc_emails": (string)[],"created_at": string,"direction": string,"from_email": string,"from_name": string | null,"headers": NonNullable<Json>,"html_body": string | null,"id": string,"in_reply_to": string | null,"message_id": string | null,"provider_message_id": string | null,"provider_thread_id": string | null,"raw_storage_path": string | null,"received_at": string | null,"references": (string)[],"sent_at": string | null,"sent_by": string | null,"subject": string | null,"text_body": string | null,"text_stripped": string | null,"ticket_id": string,"to_emails": (string)[],"translation": string | null
+                  }
+                  Insert: {
+                    "attachments"?: NonNullable<Json>,"cc_emails"?: (string)[],"created_at"?: string,"direction": string,"from_email": string,"from_name"?: string | null,"headers"?: NonNullable<Json>,"html_body"?: string | null,"id"?: string,"in_reply_to"?: string | null,"message_id"?: string | null,"provider_message_id"?: string | null,"provider_thread_id"?: string | null,"raw_storage_path"?: string | null,"received_at"?: string | null,"references"?: (string)[],"sent_at"?: string | null,"sent_by"?: string | null,"subject"?: string | null,"text_body"?: string | null,"text_stripped"?: string | null,"ticket_id": string,"to_emails"?: (string)[],"translation"?: string | null
+                  }
+                  Update: {
+                    "attachments"?: NonNullable<Json>,"cc_emails"?: (string)[],"created_at"?: string,"direction"?: string,"from_email"?: string,"from_name"?: string | null,"headers"?: NonNullable<Json>,"html_body"?: string | null,"id"?: string,"in_reply_to"?: string | null,"message_id"?: string | null,"provider_message_id"?: string | null,"provider_thread_id"?: string | null,"raw_storage_path"?: string | null,"received_at"?: string | null,"references"?: (string)[],"sent_at"?: string | null,"sent_by"?: string | null,"subject"?: string | null,"text_body"?: string | null,"text_stripped"?: string | null,"ticket_id"?: string,"to_emails"?: (string)[],"translation"?: string | null
                   }
                   Relationships: [
                     {
       foreignKeyName: "messages_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"notifications": {
+                  Row: {
+                    "app_id": string | null,"body": string,"created_at": string,"dedupe_key": string | null,"error": string | null,"id": string,"kind": string,"meta": NonNullable<Json>,"recipient": string | null,"sent_at": string | null,"status": string,"subject": string,"ticket_id": string | null
+                  }
+                  Insert: {
+                    "app_id"?: string | null,"body"?: string,"created_at"?: string,"dedupe_key"?: string | null,"error"?: string | null,"id"?: string,"kind": string,"meta"?: NonNullable<Json>,"recipient"?: string | null,"sent_at"?: string | null,"status"?: string,"subject"?: string,"ticket_id"?: string | null
+                  }
+                  Update: {
+                    "app_id"?: string | null,"body"?: string,"created_at"?: string,"dedupe_key"?: string | null,"error"?: string | null,"id"?: string,"kind"?: string,"meta"?: NonNullable<Json>,"recipient"?: string | null,"sent_at"?: string | null,"status"?: string,"subject"?: string,"ticket_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "notifications_app_id_fkey"
+      columns: ["app_id"]
+isOneToOne: false
+      referencedRelation: "apps"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "notifications_ticket_id_fkey"
       columns: ["ticket_id"]
 isOneToOne: false
       referencedRelation: "tickets"
@@ -284,15 +437,78 @@ isOneToOne: true
       referencedColumns: ["id"]
     }
                   ]
-                },"tickets": {
+                },"settings_audit": {
                   Row: {
-                    "app_id": string,"case_confidence": number | null,"case_type": string | null,"closed_at": string | null,"created_at": string,"customer_context": Json | null,"customer_email": string,"customer_name": string | null,"display_number": number,"due_date": string | null,"first_message_at": string | null,"id": string,"instaradar_user_id": string | null,"last_customer_message_at": string | null,"last_message_at": string | null,"resolution": string | null,"risk_level": string,"risk_reason": string | null,"snoozed_until": string | null,"stage": number,"status": string,"stripe_customer_id": string | null,"subject": string | null,"tags": (string)[],"updated_at": string,"waiting_for": string | null
+                    "app_id": string,"changed_by": string,"created_at": string,"id": string,"key": string,"new_value": Json | null,"old_value": Json | null,"scope": string,"summary": string
                   }
                   Insert: {
-                    "app_id": string,"case_confidence"?: number | null,"case_type"?: string | null,"closed_at"?: string | null,"created_at"?: string,"customer_context"?: Json | null,"customer_email": string,"customer_name"?: string | null,"display_number"?: number,"due_date"?: string | null,"first_message_at"?: string | null,"id"?: string,"instaradar_user_id"?: string | null,"last_customer_message_at"?: string | null,"last_message_at"?: string | null,"resolution"?: string | null,"risk_level"?: string,"risk_reason"?: string | null,"snoozed_until"?: string | null,"stage"?: number,"status"?: string,"stripe_customer_id"?: string | null,"subject"?: string | null,"tags"?: (string)[],"updated_at"?: string,"waiting_for"?: string | null
+                    "app_id": string,"changed_by": string,"created_at"?: string,"id"?: string,"key": string,"new_value"?: Json | null,"old_value"?: Json | null,"scope": string,"summary"?: string
                   }
                   Update: {
-                    "app_id"?: string,"case_confidence"?: number | null,"case_type"?: string | null,"closed_at"?: string | null,"created_at"?: string,"customer_context"?: Json | null,"customer_email"?: string,"customer_name"?: string | null,"display_number"?: number,"due_date"?: string | null,"first_message_at"?: string | null,"id"?: string,"instaradar_user_id"?: string | null,"last_customer_message_at"?: string | null,"last_message_at"?: string | null,"resolution"?: string | null,"risk_level"?: string,"risk_reason"?: string | null,"snoozed_until"?: string | null,"stage"?: number,"status"?: string,"stripe_customer_id"?: string | null,"subject"?: string | null,"tags"?: (string)[],"updated_at"?: string,"waiting_for"?: string | null
+                    "app_id"?: string,"changed_by"?: string,"created_at"?: string,"id"?: string,"key"?: string,"new_value"?: Json | null,"old_value"?: Json | null,"scope"?: string,"summary"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "settings_audit_app_id_fkey"
+      columns: ["app_id"]
+isOneToOne: false
+      referencedRelation: "apps"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_classifications": {
+                  Row: {
+                    "attempts": number,"case_type": string | null,"confidence": number | null,"created_at": string,"last_error": string | null,"model": string | null,"rationale": string | null,"ticket_id": string,"updated_at": string
+                  }
+                  Insert: {
+                    "attempts"?: number,"case_type"?: string | null,"confidence"?: number | null,"created_at"?: string,"last_error"?: string | null,"model"?: string | null,"rationale"?: string | null,"ticket_id": string,"updated_at"?: string
+                  }
+                  Update: {
+                    "attempts"?: number,"case_type"?: string | null,"confidence"?: number | null,"created_at"?: string,"last_error"?: string | null,"model"?: string | null,"rationale"?: string | null,"ticket_id"?: string,"updated_at"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_classifications_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: true
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"ticket_follow_ups": {
+                  Row: {
+                    "created_at": string,"id": string,"job_id": string | null,"kind": string,"ticket_id": string,"waiting_since": string
+                  }
+                  Insert: {
+                    "created_at"?: string,"id"?: string,"job_id"?: string | null,"kind": string,"ticket_id": string,"waiting_since": string
+                  }
+                  Update: {
+                    "created_at"?: string,"id"?: string,"job_id"?: string | null,"kind"?: string,"ticket_id"?: string,"waiting_since"?: string
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ticket_follow_ups_job_id_fkey"
+      columns: ["job_id"]
+isOneToOne: false
+      referencedRelation: "jobs"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ticket_follow_ups_ticket_id_fkey"
+      columns: ["ticket_id"]
+isOneToOne: false
+      referencedRelation: "tickets"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"tickets": {
+                  Row: {
+                    "app_id": string,"case_confidence": number | null,"case_type": string | null,"closed_at": string | null,"created_at": string,"customer_context": Json | null,"customer_email": string,"customer_name": string | null,"display_number": number,"due_date": string | null,"first_message_at": string | null,"id": string,"imported_at": string | null,"instaradar_user_id": string | null,"last_customer_message_at": string | null,"last_message_at": string | null,"resolution": string | null,"risk_level": string,"risk_reason": string | null,"snoozed_until": string | null,"stage": number,"status": string,"stripe_customer_id": string | null,"subject": string | null,"tags": (string)[],"updated_at": string,"waiting_for": string | null
+                  }
+                  Insert: {
+                    "app_id": string,"case_confidence"?: number | null,"case_type"?: string | null,"closed_at"?: string | null,"created_at"?: string,"customer_context"?: Json | null,"customer_email": string,"customer_name"?: string | null,"display_number"?: number,"due_date"?: string | null,"first_message_at"?: string | null,"id"?: string,"imported_at"?: string | null,"instaradar_user_id"?: string | null,"last_customer_message_at"?: string | null,"last_message_at"?: string | null,"resolution"?: string | null,"risk_level"?: string,"risk_reason"?: string | null,"snoozed_until"?: string | null,"stage"?: number,"status"?: string,"stripe_customer_id"?: string | null,"subject"?: string | null,"tags"?: (string)[],"updated_at"?: string,"waiting_for"?: string | null
+                  }
+                  Update: {
+                    "app_id"?: string,"case_confidence"?: number | null,"case_type"?: string | null,"closed_at"?: string | null,"created_at"?: string,"customer_context"?: Json | null,"customer_email"?: string,"customer_name"?: string | null,"display_number"?: number,"due_date"?: string | null,"first_message_at"?: string | null,"id"?: string,"imported_at"?: string | null,"instaradar_user_id"?: string | null,"last_customer_message_at"?: string | null,"last_message_at"?: string | null,"resolution"?: string | null,"risk_level"?: string,"risk_reason"?: string | null,"snoozed_until"?: string | null,"stage"?: number,"status"?: string,"stripe_customer_id"?: string | null,"subject"?: string | null,"tags"?: (string)[],"updated_at"?: string,"waiting_for"?: string | null
                   }
                   Relationships: [
                     {
@@ -302,6 +518,19 @@ isOneToOne: false
       referencedRelation: "apps"
       referencedColumns: ["id"]
     }
+                  ]
+                },"vercel_logs": {
+                  Row: {
+                    "at": string,"created_at": string,"deployment_id": string | null,"id": number,"level": string,"message": string,"raw": Json | null,"request_id": string | null,"source": string | null
+                  }
+                  Insert: {
+                    "at": string,"created_at"?: string,"deployment_id"?: string | null,"id"?: never,"level"?: string,"message": string,"raw"?: Json | null,"request_id"?: string | null,"source"?: string | null
+                  }
+                  Update: {
+                    "at"?: string,"created_at"?: string,"deployment_id"?: string | null,"id"?: never,"level"?: string,"message"?: string,"raw"?: Json | null,"request_id"?: string | null,"source"?: string | null
+                  }
+                  Relationships: [
+                    
                   ]
                 }
           }

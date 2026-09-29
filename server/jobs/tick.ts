@@ -2,7 +2,8 @@
  * The two cron lanes (IRDR-455), see docs/adr/001-jobs.md:
  *  - tick: every minute. Evaluates the recurring schedule, runs due jobs within the time budget
  *    (an agent run may take 1 to 3 minutes), checks health, prunes old history once a day.
- *  - fetch-mail: every minute, fetch_mail only, so a long agent run never delays inbound mail.
+ *  - fetch-mail: every minute, fetch_mail (plus one history import chunk), so a long agent run
+ *    never delays inbound mail.
  */
 import type { CronAck } from '#shared/api'
 import { JOBS } from '#shared/config'
@@ -88,12 +89,14 @@ export async function runFetchMailLane(opts: TickOptions = {}): Promise<FetchLan
   const budgetMs = opts.budgetMs ?? JOBS.fetchLaneBudgetMs
   const t0 = Date.now()
   const schedule = await runSchedule(db, { now, only: ['fetch_mail'] })
+  // The history import rides in this lane too (one chunk next to the live fetch, see
+  // server/mail/backfill.ts); the tick lane picks its chunks up as well.
   const jobs = await runDueJobs({
     db,
     worker,
     budgetMs,
-    types: ['fetch_mail'],
-    maxJobs: 1,
+    types: ['fetch_mail', 'backfill_mail'],
+    maxJobs: 2,
     notify,
     log,
   })

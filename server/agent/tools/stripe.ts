@@ -225,12 +225,35 @@ export function createStripeReadClient(readKey: string): StripeReadClient {
       return customerSummary(c as Stripe.Customer)
     },
     async listSubscriptions(customerId) {
+      // `price` comes expanded by default; `price.product` would be a fifth expand level, which
+      // Stripe rejects ("cannot expand more than 4 levels"). Products are fetched by id instead.
       const res = await stripe.subscriptions.list({
         customer: customerId,
         status: 'all',
         limit: 20,
-        expand: ['data.items.data.price.product'],
       })
+      const productIds = new Set<string>()
+      for (const sub of res.data) {
+        for (const item of sub.items?.data ?? []) {
+          const product = (item.price as { product?: unknown } | null)?.product
+          if (typeof product === 'string') productIds.add(product)
+        }
+      }
+      const products = new Map<string, Stripe.Product>()
+      await Promise.all(
+        [...productIds].map(async (id) => {
+          const product = await stripe.products.retrieve(id).catch(() => null)
+          if (product && !(product as { deleted?: boolean }).deleted) products.set(id, product)
+        }),
+      )
+      for (const sub of res.data) {
+        for (const item of sub.items?.data ?? []) {
+          const price = item.price as { product?: unknown } | null
+          if (price && typeof price.product === 'string' && products.has(price.product)) {
+            price.product = products.get(price.product)
+          }
+        }
+      }
       return res.data.map(subscriptionSummary)
     },
     async listInvoices(customerId) {

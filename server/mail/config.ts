@@ -43,6 +43,8 @@ export interface MailConfig {
   stuckSendMinutes: number
   imap: ImapConfig | null
   smtp: SmtpConfig | null
+  /** Claude key for the classify-only pass over imported history (null: the pass is skipped). */
+  anthropicApiKey: string | null
 }
 
 type Env = Record<string, string | undefined>
@@ -78,6 +80,7 @@ export function mailConfigFromEnv(env: Env = process.env): MailConfig {
     stuckSendMinutes: MAILBOX.stuckSendMinutes,
     imap: null,
     smtp: null,
+    anthropicApiKey: str(env.ANTHROPIC_API_KEY),
   }
   if (provider === 'imap') {
     const password = str(env.MAIL_PASSWORD)!
