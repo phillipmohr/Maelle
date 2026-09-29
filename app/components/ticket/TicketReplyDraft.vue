@@ -58,7 +58,7 @@ watch(
 </script>
 
 <template>
-  <section class="flex flex-col gap-[10px]" aria-label="Reply draft">
+  <section class="flex flex-col gap-[10px]" aria-label="Reply draft" data-nav-label="Reply">
     <div class="flex items-baseline justify-between gap-3">
       <Eyebrow as="h2">Reply draft</Eyebrow>
       <Mono class="text-[11px]"

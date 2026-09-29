@@ -29,7 +29,7 @@ const meta = computed(() => props.metaLine ?? `${props.actions.length} of ${ACTI
 </script>
 
 <template>
-  <Panel as="section" aria-label="Proposed actions">
+  <Panel as="section" aria-label="Proposed actions" data-nav-label="Actions">
     <PanelHeader title="Proposed actions" :meta="meta" eyebrow />
     <div class="divide-hairline">
       <TicketActionRow
