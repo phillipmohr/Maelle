@@ -180,8 +180,12 @@ export function createDbAgentStore(): AgentStore {
       )
     },
     async setTicketStatus(ticketId, from, to) {
+      // Leaving `closed` (re-open and draft a reply) clears the closing marks, as a customer reply does.
       const rows = await dbQuery<Row>(
-        `update public.tickets set status = $3 where id = $1 and status = $2 returning id`,
+        `update public.tickets set status = $3,
+           closed_at = case when $2 = 'closed' then null else closed_at end,
+           resolution = case when $2 = 'closed' then null else resolution end
+         where id = $1 and status = $2 returning id`,
         [ticketId, from, to],
       )
       if (rows.length === 0) {
