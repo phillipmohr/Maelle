@@ -612,6 +612,40 @@ days. A customer reply moves `waiting_on_customer`, `closed`, `snoozed` and `nee
 `researching` and enqueues a `customer_reply` run; a reply on a `new` ticket is attached to the
 queued run; other statuses attach and enqueue a run without changing the status.
 
+### Mailbox menu: fetch now, history import, cases for old tickets
+
+The inbox header has a **Mailbox** popover (`/api/mail/status`, `InboxMailboxMenu.vue`) with the
+live fetch state and three actions:
+
+- **Fetch now** (`POST /api/mail/fetch`) runs the live fetch in the request and reports what it
+  found. Safe next to the cron's own run: every message deduplicates.
+- **Import history** (`POST /api/mail/import`, `server/mail/backfill.ts`) loads everything that is
+  in INBOX and in the Sent folder, oldest first, so the closed view holds every conversation from
+  before Maelle and the per-case counts cover them. It is not the live fetch: every ticket it
+  creates is **closed on arrival** with `tickets.imported_at` set, **no agent run is ever enqueued**,
+  and the 30-day subject window is measured from each mail's own date on both sides. Our old replies
+  come from the Sent folder as outbound messages sent by you (threaded by `In-Reply-To`, else by
+  recipient and subject within 30 days; a mail we sent first opens its own closed ticket; mail to our
+  own domain is ignored). Work happens in `backfill_mail` chunk jobs (`MAILBOX.backfill` in
+  `shared/config.ts`: 50 messages, 25 s) that run in the fetch-mail lane next to the live fetch and
+  re-enqueue themselves until both folders are done; the cursor (`mail_backfills`, one row per
+  folder) only moves past handled mail, a failed message is counted and skipped, and a chunk that
+  dies is simply run again. A customer who writes to an imported thread reopens it the normal way.
+- **Classify** (`POST /api/mail/classify-imported`, `server/mail/history-classify.ts`) gives imported
+  tickets a case without drafting or executing anything: one short call per ticket on
+  `MODELS.classify` (`claude-opus-5-5`, low effort, JSON schema, the same `unclear` threshold as
+  the agent), in `classify_imported` chunk jobs. It starts by itself when an import finishes and
+  needs `ANTHROPIC_API_KEY`; attempts per ticket live in `ticket_classifications`, and after three
+  failures a ticket is left without a case instead of retrying forever.
+
+The closed table's case filter shows the count per case under the current decision and date
+filters (`caseCounts` on `GET /api/tickets?status=closed`), imported history included; imported rows
+show "Imported" in the decision column.
+
+Migration `20260929120000_mail_history.sql` also seeds the InstaRadar `apps` row and its `settings`
+row: a fresh project never ran `pnpm db:seed` (that carries the design's sample tickets), and
+without the app row the first real customer mail fails to ingest.
+
 ### Linear webhook
 
 Linear → Settings → API → Webhooks → new webhook with URL `https://<maelle>/api/webhooks/linear`,
@@ -643,4 +677,5 @@ pnpm test:db` covers the pipeline end to end on a real Postgres: ingest and dedu
 status transitions, ignored mail, attachments, a crash mid-ingest, exactly-once sends (retry,
 send-then-crash, stale lock takeover, concurrency), enqueue/claim/retry/dead-letter, expired locks,
 per-ticket serialisation, the recurring schedule, snooze wake-up, follow-up timers, health alerts,
-the Linear webhook and both cron lanes.
+the Linear webhook, both cron lanes, the history import (both folders, chunk cursors, the
+classify-only pass, the lanes running it) and the mailbox status.

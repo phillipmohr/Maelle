@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  closedCaseCountsSql,
   decodeClosedCursor,
   encodeClosedCursor,
   isClosedOnly,
@@ -33,6 +34,22 @@ describe('ticket list query parsing', () => {
     expect(parseTicketListQuery({ from: '2026-09-25' }).from).toBe(
       new Date('2026-09-25').toISOString(),
     )
+  })
+
+  it('counts closed tickets per case under the same filters, minus the case filter itself', () => {
+    const q = parseTicketListQuery({
+      status: 'closed',
+      caseType: 'bug_report',
+      resolution: 'auto',
+      from: '2026-09-01',
+      q: 'anna',
+    })
+    const sql = closedCaseCountsSql(q)
+    expect(sql.text).toMatch(/group by t\.case_type/)
+    expect(sql.text).toMatch(/t\.resolution = \$1/)
+    expect(sql.text).toMatch(/t\.closed_at >= \$2::timestamptz/)
+    expect(sql.text).not.toMatch(/case_type = \$/)
+    expect(sql.params).toEqual(['auto', new Date('2026-09-01').toISOString(), '%anna%'])
   })
 
   it('round-trips the closed cursor', () => {

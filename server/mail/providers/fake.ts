@@ -11,12 +11,38 @@ import type {
   FetchedRaw,
   ListNewOptions,
   ListNewResult,
+  ListRangeOptions,
+  ListRangeResult,
   MailCursor,
   MailProvider,
   OutgoingMail,
   ProviderMessageRef,
   SendResult,
 } from '../types'
+
+/** History import over an in-memory list: position + 1 is the UID, so cursors behave like IMAP's. */
+function pageOf(
+  items: readonly { id: string; threadId?: string | null }[],
+  opts: ListRangeOptions,
+  uidValidity: string,
+): ListRangeResult {
+  const sameGeneration = opts.uidValidity == null || opts.uidValidity === uidValidity
+  const after = sameGeneration && opts.afterUid != null ? Math.max(0, opts.afterUid) : 0
+  const maxUid = items.length
+  const page = items.slice(after, after + opts.limit)
+  return {
+    messages: page.map((m, i) => ({
+      id: m.id,
+      threadId: m.threadId ?? null,
+      folder: opts.folder,
+      uid: after + i + 1,
+    })),
+    uidValidity,
+    maxUid,
+    lastUid: page.length ? after + page.length : Math.max(after, maxUid),
+    reset: !sameGeneration,
+  }
+}
 
 export interface FakeInboxMessage {
   id: string
@@ -67,10 +93,39 @@ export class FakeMailProvider implements MailProvider {
     }
   }
 
+  /** Tests: a mail we sent before Maelle existed (lands in the fake Sent folder, nothing is delivered). */
+  injectSent(raw: string | Buffer, mail: Partial<OutgoingMail> & { messageId: string }): string {
+    const id = `fake-sent-${++this.seq}`
+    this.sent.push({
+      id,
+      mail: {
+        from: { name: 'InstaRadar Support', address: 'support@instaradar.app' },
+        to: [],
+        subject: '',
+        text: '',
+        html: '',
+        ...mail,
+      },
+      raw: Buffer.isBuffer(raw) ? raw : Buffer.from(raw, 'utf8'),
+    })
+    return id
+  }
+
+  async listRange(opts: ListRangeOptions): Promise<ListRangeResult> {
+    if (this.failNextList) {
+      const e = this.failNextList
+      this.failNextList = null
+      throw e
+    }
+    return pageOf(opts.folder === 'sent' ? this.sent : this.inbox, opts, `fake-${opts.folder}`)
+  }
+
   async fetch(ref: ProviderMessageRef): Promise<FetchedRaw> {
     const m = this.inbox.find((x) => x.id === ref.id)
-    if (!m) throw new Error(`fake provider: unknown message ${ref.id}`)
-    return { raw: m.raw, threadId: m.threadId }
+    if (m) return { raw: m.raw, threadId: m.threadId }
+    const s = this.sent.find((x) => x.id === ref.id)
+    if (s) return { raw: s.raw, threadId: s.mail.threadId ?? null }
+    throw new Error(`fake provider: unknown message ${ref.id}`)
   }
 
   async send(mail: OutgoingMail): Promise<SendResult> {
@@ -123,8 +178,32 @@ export class DirectoryMailProvider implements MailProvider {
     }
   }
 
+  async listRange(opts: ListRangeOptions): Promise<ListRangeResult> {
+    const files =
+      opts.folder === 'sent' ? (await this.sentFiles()).map((f) => `sent/${f}`) : await this.files()
+    return pageOf(
+      files.map((id) => ({ id })),
+      opts,
+      `dir-${opts.folder}`,
+    )
+  }
+
+  private async sentFiles(): Promise<string[]> {
+    try {
+      return (await readdir(path.join(this.dir, 'sent')))
+        .filter((f) => f.toLowerCase().endsWith('.eml'))
+        .sort()
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw e
+    }
+  }
+
   async fetch(ref: ProviderMessageRef): Promise<FetchedRaw> {
-    return { raw: await readFile(path.join(this.dir, path.basename(ref.id))), threadId: null }
+    const file = ref.id.startsWith('sent/')
+      ? path.join(this.dir, 'sent', path.basename(ref.id))
+      : path.join(this.dir, path.basename(ref.id))
+    return { raw: await readFile(file), threadId: null }
   }
 
   async send(mail: OutgoingMail): Promise<SendResult> {

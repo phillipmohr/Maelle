@@ -88,6 +88,7 @@ export function customerName(i: InboxItem): string {
 /** Case column of the tables: the short label; "Classifying…" while the agent works. */
 export function caseText(i: InboxItem): string {
   if (i.caseType) return caseShortLabel(i.caseType)
+  if (i.importedAt) return 'Not classified yet'
   return i.status === 'researching' || i.status === 'new' ? 'Classifying…' : 'Unclear'
 }
 
@@ -284,9 +285,14 @@ export interface DecisionPill {
   dot: boolean
 }
 
-/** Decision column of the closed table. */
-export function decisionPill(i: Pick<InboxItem, 'resolution' | 'decision'>): DecisionPill {
+/** Decision column of the closed table. An imported history ticket had no decision here at all. */
+export function decisionPill(
+  i: Pick<InboxItem, 'resolution' | 'decision'> & Partial<Pick<InboxItem, 'importedAt'>>,
+): DecisionPill {
   const r: TicketResolution | DecisionKind | null = i.resolution ?? i.decision
+  if (r == null && i.importedAt) {
+    return { kind: 'plain', status: 'neutral', label: 'Imported', dot: false }
+  }
   switch (r) {
     case 'approved':
       return { kind: 'pill', status: 'success', label: 'Approved', dot: true }

@@ -26,6 +26,18 @@ const items = list.items
 const by = (n: number) => items.find((i) => i.displayNumber === n)!
 
 describe('inbox rows', () => {
+  it('shows imported history tickets as Imported with no decision', () => {
+    expect(
+      decisionPill({ resolution: null, decision: null, importedAt: '2026-09-29T00:00:00Z' }),
+    ).toEqual({ kind: 'plain', status: 'neutral', label: 'Imported', dot: false })
+    expect(
+      decisionPill({ resolution: 'approved', decision: null, importedAt: '2026-09-29T00:00:00Z' })
+        .label,
+    ).toBe('Approved')
+    const imported = { ...by(4801), caseType: null, importedAt: '2026-09-29T00:00:00Z' }
+    expect(caseText(imported)).toBe('Not classified yet')
+  })
+
   it('sorts needs decision: safety, high risk, then oldest first', () => {
     const rows = needsDecisionRows(items)
     expect(rows.map((r) => r.displayNumber)).toEqual([4825, 4809, 4819, 4822, 4824, 4820, 4828])
