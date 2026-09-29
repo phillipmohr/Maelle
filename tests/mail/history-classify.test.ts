@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyThreshold,
   classificationSystemPrompt,
+  CLASSIFICATION_JSON_SCHEMA,
   classificationUserPrompt,
   createFakeClassifier,
   MAX_THREAD_CHARS,
@@ -15,6 +16,13 @@ describe('history classification prompt', () => {
     for (const key of CASE_TYPE_KEYS) expect(s).toContain(`\`${key}\``)
     expect(s).toMatch(/do not draft a reply/i)
     expect(s).not.toMatch(/—/)
+  })
+
+  it('keeps the JSON schema inside the structured-output grammar (no number bounds)', () => {
+    const json = JSON.stringify(CLASSIFICATION_JSON_SCHEMA)
+    expect(json).not.toMatch(/minimum|maximum/)
+    expect(CLASSIFICATION_JSON_SCHEMA.additionalProperties).toBe(false)
+    expect(CLASSIFICATION_JSON_SCHEMA.required).toEqual(['caseType', 'confidence', 'rationale'])
   })
 
   it('renders the thread oldest first with who wrote what', () => {
