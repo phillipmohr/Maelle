@@ -6,6 +6,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import { agentRuntimeConfig } from '../server/agent/config'
 import { createAnthropicModelClient } from '../server/agent/model/anthropic'
+import { totalInputTokens, totalsOf } from '../shared/usage'
 import { ALL_FIXTURES, CASE_2_REFUND } from './fixtures'
 import { checkExpectations, median, runFixture, runFollowUp, type HarnessRun } from './harness'
 
@@ -18,9 +19,12 @@ if (!apiKey)
 
 const rows: Record<string, unknown>[] = []
 const durations: number[] = []
+let spentUsd = 0
 
 function record(run: HarnessRun, failures: string[]) {
   const p = run.proposal
+  const usage = totalsOf(run.usage.modelCalls)
+  spentUsd += usage.costUsd ?? 0
   rows.push({
     fixture: run.fixture.id,
     case: p ? `${p.caseType} (${p.confidence?.toFixed(2)})` : '-',
@@ -33,6 +37,9 @@ function record(run: HarnessRun, failures: string[]) {
       : '-',
     stage: p ? `${p.stage}${p.customerConfirmationNeeded ? ' (confirm)' : ''}` : '-',
     s: Math.round(run.durationMs / 1000),
+    calls: usage.calls,
+    tokens: totalInputTokens(usage) + usage.outputTokens,
+    usd: usage.costUsd == null ? '-' : usage.costUsd.toFixed(3),
     result: failures.length
       ? `FAIL: ${failures.join('; ')}`
       : run.result.status === 'succeeded'
@@ -84,7 +91,7 @@ describe.skipIf(!apiKey)(`live eval (${agentRuntimeConfig().model}, fake tools)`
     console.log('\nLive eval summary')
     console.table(rows)
     console.log(
-      `median ${Math.round(median(durations) / 1000)} s over ${durations.length} runs · * = after_confirmation`,
+      `median ${Math.round(median(durations) / 1000)} s over ${durations.length} runs · $${spentUsd.toFixed(3)} spent · * = after_confirmation`,
     )
   })
 })

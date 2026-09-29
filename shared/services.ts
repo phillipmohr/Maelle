@@ -18,6 +18,8 @@ export const JOB_TYPES = [
   'waiting_follow_up',
   'send_reply',
   'send_system_email',
+  'backfill_mail',
+  'classify_imported',
 ] as const
 export type JobType = (typeof JOB_TYPES)[number]
 
@@ -40,6 +42,10 @@ export interface JobPayloads {
   waiting_follow_up: Record<string, never>
   send_reply: { ticketId: string; executionId: string }
   send_system_email: { to: string; subject: string; body: string }
+  /** One chunk of the mailbox history import; the handler enqueues the next chunk while work remains. */
+  backfill_mail: Record<string, never>
+  /** One chunk of classify-only runs over imported tickets without a case; re-enqueues itself likewise. */
+  classify_imported: Record<string, never>
 }
 
 export interface JobHandle {

@@ -7,6 +7,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { MODELS } from '#shared/config'
 import { EM_DASH_RE } from '#shared/proposal'
+import { ticketIdOrNull, trackModelCall } from '../usage/record'
+import type { UsageSink } from '../usage/types'
 
 export const KB_CATEGORIES = [
   'Data & accuracy',
@@ -25,6 +27,8 @@ export type KbType = (typeof KB_TYPES)[number]
 export const DEFAULT_SMALL_MODEL: string = MODELS.small
 
 export interface KbCondensationInput {
+  /** Maelle ticket uuid, for the usage row (IRDR-460). */
+  ticketId?: string | null
   subject: string | null
   caseLabel: string
   customerMessage: string
@@ -168,37 +172,49 @@ export function createAnthropicModelClient(opts: {
   apiKey: string
   model?: string
   logger?: (msg: string) => void
+  /** Token rows of every condensation (IRDR-460); null records nothing. */
+  usage?: UsageSink | null
+  /** Tests only: a prepared client instead of one built from the key. */
+  client?: Pick<Anthropic, 'messages'>
 }): ModelClient {
-  const client = new Anthropic({ apiKey: opts.apiKey, timeout: 30_000, maxRetries: 1 })
+  const client =
+    opts.client ?? new Anthropic({ apiKey: opts.apiKey, timeout: 30_000, maxRetries: 1 })
   const model = opts.model || DEFAULT_SMALL_MODEL
   const logger = opts.logger ?? ((msg) => console.warn(msg))
+  const usage = opts.usage ?? null
   return {
     kind: 'anthropic',
     model,
     async condenseKnowledge(input) {
       const fallback = condenseDeterministically(input)
       try {
-        const response = await client.messages.create({
-          model,
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: 'user',
-              content: JSON.stringify({
-                subject: input.subject,
-                case: input.caseLabel,
-                customerMessage: input.customerMessage,
-                finalReply: input.reply,
-                allowedCategories: KB_CATEGORIES,
-                allowedTypes: KB_TYPES,
-                suggestedCategory: input.suggestedCategory,
-                suggestedType: input.suggestedType,
-              }),
-            },
-          ],
-          output_config: { format: { type: 'json_schema', schema: KB_JSON_SCHEMA } },
-        })
+        const response = await trackModelCall(
+          usage,
+          { purpose: 'kb_condensation', model, ticketId: ticketIdOrNull(input.ticketId) },
+          () =>
+            client.messages.create({
+              model,
+              max_tokens: 2048,
+              system: SYSTEM_PROMPT,
+              messages: [
+                {
+                  role: 'user',
+                  content: JSON.stringify({
+                    subject: input.subject,
+                    case: input.caseLabel,
+                    customerMessage: input.customerMessage,
+                    finalReply: input.reply,
+                    allowedCategories: KB_CATEGORIES,
+                    allowedTypes: KB_TYPES,
+                    suggestedCategory: input.suggestedCategory,
+                    suggestedType: input.suggestedType,
+                  }),
+                },
+              ],
+              output_config: { format: { type: 'json_schema', schema: KB_JSON_SCHEMA } },
+            }),
+          (msg, data) => logger(`${msg} ${data instanceof Error ? data.message : ''}`),
+        )
         if (response.stop_reason === 'refusal') return fallback
         const text = response.content
           .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -228,12 +244,16 @@ export function createAnthropicModelClient(opts: {
 
 let fromEnv: ModelClient | null = null
 
-export function modelClientFromEnv(env: NodeJS.ProcessEnv = process.env): ModelClient {
+export function modelClientFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  usage: UsageSink | null = null,
+): ModelClient {
   if (fromEnv) return fromEnv
   fromEnv = env.ANTHROPIC_API_KEY
     ? createAnthropicModelClient({
         apiKey: env.ANTHROPIC_API_KEY,
         model: DEFAULT_SMALL_MODEL,
+        usage,
       })
     : createFallbackModelClient()
   return fromEnv

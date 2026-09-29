@@ -1,0 +1,38 @@
+name: Deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+    secrets:
+      project-ref:
+        required: true
+      token:
+        required: true
+      db-password:
+        required: true
+
+jobs:
+  migrate-database:
+    name: Migrate database to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_PROJECT_REF: ${{ secrets.project-ref }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.token }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.db-password }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link to database
+        run: supabase link --project-ref ${{ secrets.project-ref }}
+      - name: Migrate database
+        run: supabase db push

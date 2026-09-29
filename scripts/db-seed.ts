@@ -22,6 +22,8 @@ const PRIMARY_KEYS: Record<keyof SeedBundle, string[]> = {
   decisions: ['id'],
   release_notifications: ['id'],
   cancellation_reasons: ['id'],
+  model_calls: ['id'],
+  agent_tool_calls: ['id'],
 }
 
 const JSON_COLUMNS = new Set([
@@ -37,6 +39,7 @@ const JSON_COLUMNS = new Set([
   'external_refs',
   'reply_diff',
   'action_changes',
+  'input',
 ])
 
 export async function seed(

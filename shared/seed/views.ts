@@ -13,8 +13,17 @@ import type {
   TicketListItem,
   TicketListResponse,
   TicketRow,
+  UsageResponse,
 } from '../api'
 import { ACTIONS } from '../actions'
+import {
+  aggregateUsage,
+  modelCallFromRow,
+  ticketUsageFromRows,
+  toolCallFromRow,
+  type UsageWindow,
+} from '../usage'
+import type { CaseType } from '../case-types'
 import type { SeedBundle } from './data'
 
 type Row = Record<string, unknown>
@@ -170,5 +179,29 @@ export function seedTicketDetail(
       .filter((r) => r.ticket_id === t.id)
       .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
       .map((r) => toCamel<AgentRunRow>(r)),
+    usage: ticketUsageFromRows(
+      bundle.model_calls.filter((c) => c.ticket_id === t.id).map(modelCallFromRow),
+      bundle.agent_tool_calls.filter((c) => c.ticket_id === t.id).map(toolCallFromRow),
+    ),
   }
+}
+
+/** GET /api/usage from the seed (and from database rows loaded into a bundle). */
+export function seedUsageResponse(bundle: SeedBundle, window: UsageWindow): UsageResponse {
+  const tickets = new Map(bundle.tickets.map((t) => [t.id as string, t]))
+  return aggregateUsage(
+    window,
+    bundle.model_calls.map(modelCallFromRow),
+    bundle.agent_tool_calls.map(toolCallFromRow),
+    (id) => {
+      const t = tickets.get(id)
+      return t
+        ? {
+            displayNumber: (t.display_number as number | null) ?? null,
+            customerName: (t.customer_name as string | null) ?? null,
+            caseType: (t.case_type as CaseType | null) ?? null,
+          }
+        : null
+    },
+  )
 }

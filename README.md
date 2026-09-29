@@ -176,6 +176,25 @@ Vercel logs, Notion, Linear) and can be added later; until then that source is r
 unavailable and that action says "not configured". Cron schedules are in `vercel.json`
 (see `docs/adr/001-jobs.md`).
 
+### Database migrations on deploy
+
+Every push to `main` runs `.github/workflows/cd-prod.yaml`, which calls the reusable
+`.github/workflows/deploy.yaml` (same pipeline as InstaRadar): it links the Supabase CLI to the
+production project and runs `supabase db push`, applying the pending files in `supabase/migrations`.
+`pnpm db:migrate` records applied migrations in the same `supabase_migrations.schema_migrations` table
+the CLI uses, so the two never re-apply each other's work. The workflow needs three repository secrets
+(GitHub → Settings → Secrets and variables → Actions):
+
+| Secret                      | Value                                                                 |
+| --------------------------- | --------------------------------------------------------------------- |
+| `SUPABASE_CLI_TOKEN`        | Personal access token (Supabase dashboard → Account → Access Tokens)  |
+| `SUPABASE_PROD_REF`         | Project ref of Maelle's Supabase project (Project Settings → General) |
+| `SUPABASE_PROD_DB_PASSWORD` | The project's database password                                       |
+
+`supabase db push` only applies SQL; the one-time allow-listing of `OWNER.email` that
+`pnpm db:migrate` does is not part of it, so run `pnpm db:migrate` once against the production URL
+(or insert the row into `allowed_users` by hand) before the first sign-in.
+
 ## IRDR-459: Autonomy, activity log, playbook, notifications, learning loop
 
 Owner folders: `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`,
@@ -538,6 +557,41 @@ and, while the jobs service is still the stub, runs the agent inline; the run th
 "Database is not configured" because the agent writes to Maelle's tables. With `SUPABASE_DB_URL`
 and `ANTHROPIC_API_KEY` set, the run is real; sources without credentials are skipped with a warning.
 
+## IRDR-460 · Claude token usage and costs
+
+Every Claude call is recorded with its tokens and priced at the time it ran, so the cost of a
+ticket, of a research step and of a period can be read from Maelle's own database.
+
+- `public.model_calls`: one row per API call. `purpose` is `agent_turn` (one row per turn of the
+  agent loop, with `run_id`, `turn` and `attempt`), `consistency_check` (the small model behind the
+  reply editor), `kb_condensation` (Create KB draft), `history_classification` (the classify-only
+  pass over imported history tickets) or `eval`. Columns: the four token kinds as the
+  API reports them (`input_tokens` uncached, `cache_read_tokens`, `cache_creation_tokens`,
+  `output_tokens`), `cost_usd`, `duration_ms`, `status` (`ok`, `refusal`, `error`), `stop_reason`.
+- `public.agent_tool_calls`: one row per tool call inside the loop: tool, source, input, result size,
+  duration, and `context_tokens`, the share of the next turn's input growth this result caused
+  (measured; `context_measured = false` marks the `result_chars / 4` estimate written when no next
+  turn came). Every later turn reads those tokens again, which is why a large tool result costs more
+  than its own size.
+- `public.agent_runs` keeps the totals of the latest attempt (`input_tokens` is uncached input since
+  this migration; `cache_read_tokens`, `cache_creation_tokens`, `cost_usd`), on success and on failure.
+
+Recording goes through `server/usage/` (`UsageSink`: Postgres or memory) and `trackModelCall()`,
+which wraps a call, reads `response.usage` and writes the row; a sink error is logged and never
+fails the call. Prices live in `shared/pricing.ts` (USD per million tokens per model, incl. cache
+reads and 5-minute cache writes); a model without a price records `cost_usd = null` and the UI shows
+tokens only. Update that table when a price or a model changes: the history keeps the price of its
+day.
+
+Where it shows: the ticket detail's Research meta line (`3 sources · 22s · $0.42`, the run that
+produced the proposal) with "Show cost breakdown" (every run with its turns and tool calls, the
+consistency checks and KB drafts, the ticket total), and the Costs page (`/anastasai/costs`,
+`GET /api/usage?days=30`): spend, per ticket, calls and cache share, cost per day, by purpose and
+model, the tools with their context tokens and durations, the most expensive tickets. The
+aggregation is one pure function (`shared/usage.ts`) fed by the database rows or by the seed, so
+`AUTH_DISABLED=true pnpm dev` shows the page with sample data. The live eval prints tokens and USD
+per fixture.
+
 ## Mail and jobs (IRDR-455)
 
 Every mail to support@instaradar.app becomes a ticket, every reply goes out exactly once, and one
@@ -594,6 +648,40 @@ days. A customer reply moves `waiting_on_customer`, `closed`, `snoozed` and `nee
 `researching` and enqueues a `customer_reply` run; a reply on a `new` ticket is attached to the
 queued run; other statuses attach and enqueue a run without changing the status.
 
+### Mailbox menu: fetch now, history import, cases for old tickets
+
+The inbox header has a **Mailbox** popover (`/api/mail/status`, `InboxMailboxMenu.vue`) with the
+live fetch state and three actions:
+
+- **Fetch now** (`POST /api/mail/fetch`) runs the live fetch in the request and reports what it
+  found. Safe next to the cron's own run: every message deduplicates.
+- **Import history** (`POST /api/mail/import`, `server/mail/backfill.ts`) loads everything that is
+  in INBOX and in the Sent folder, oldest first, so the closed view holds every conversation from
+  before Maelle and the per-case counts cover them. It is not the live fetch: every ticket it
+  creates is **closed on arrival** with `tickets.imported_at` set, **no agent run is ever enqueued**,
+  and the 30-day subject window is measured from each mail's own date on both sides. Our old replies
+  come from the Sent folder as outbound messages sent by you (threaded by `In-Reply-To`, else by
+  recipient and subject within 30 days; a mail we sent first opens its own closed ticket; mail to our
+  own domain is ignored). Work happens in `backfill_mail` chunk jobs (`MAILBOX.backfill` in
+  `shared/config.ts`: 50 messages, 25 s) that run in the fetch-mail lane next to the live fetch and
+  re-enqueue themselves until both folders are done; the cursor (`mail_backfills`, one row per
+  folder) only moves past handled mail, a failed message is counted and skipped, and a chunk that
+  dies is simply run again. A customer who writes to an imported thread reopens it the normal way.
+- **Classify** (`POST /api/mail/classify-imported`, `server/mail/history-classify.ts`) gives imported
+  tickets a case without drafting or executing anything: one short call per ticket on
+  `MODELS.classify` (`claude-opus-5-5`, low effort, JSON schema, the same `unclear` threshold as
+  the agent), in `classify_imported` chunk jobs. It starts by itself when an import finishes and
+  needs `ANTHROPIC_API_KEY`; attempts per ticket live in `ticket_classifications`, and after three
+  failures a ticket is left without a case instead of retrying forever.
+
+The closed table's case filter shows the count per case under the current decision and date
+filters (`caseCounts` on `GET /api/tickets?status=closed`), imported history included; imported rows
+show "Imported" in the decision column.
+
+Migration `20260929120000_mail_history.sql` also seeds the InstaRadar `apps` row and its `settings`
+row: a fresh project never ran `pnpm db:seed` (that carries the design's sample tickets), and
+without the app row the first real customer mail fails to ingest.
+
 ### Linear webhook
 
 Linear → Settings → API → Webhooks → new webhook with URL `https://<maelle>/api/webhooks/linear`,
@@ -625,4 +713,5 @@ pnpm test:db` covers the pipeline end to end on a real Postgres: ingest and dedu
 status transitions, ignored mail, attachments, a crash mid-ingest, exactly-once sends (retry,
 send-then-crash, stale lock takeover, concurrency), enqueue/claim/retry/dead-letter, expired locks,
 per-ticket serialisation, the recurring schedule, snooze wake-up, follow-up timers, health alerts,
-the Linear webhook and both cron lanes.
+the Linear webhook, both cron lanes, the history import (both folders, chunk cursors, the
+classify-only pass, the lanes running it) and the mailbox status.

@@ -159,8 +159,11 @@ describe('ticket model', () => {
     expect(provenanceLine(detail(4824).proposal!)).toBe(
       'Prepared by AnastasAI from Stripe billing, the email history and the cancellation only template',
     )
-    expect(researchMeta(detail(4825).proposal!, detail(4825).runs)).toBe('3 sources · 22s')
-    expect(researchMeta(detail(4809).proposal!, detail(4809).runs)).toBe('2 sources · 5s')
+    expect(researchMeta(detail(4825).proposal!, detail(4825).runs)).toBe('3 sources · 22s · $0.42')
+    expect(researchMeta(detail(4809).proposal!, detail(4809).runs)).toBe('2 sources · 5s · $0.42')
+    expect(researchMeta(detail(4825).proposal!, [{ proposalId: null, durationMs: 3_000 }])).toBe(
+      '3 sources · 3s',
+    )
     expect(sourceLink({ kind: 'stripe', label: 'Stripe · sub_1', ref: 'sub_1' })).toEqual({
       href: 'https://dashboard.stripe.com/search?query=sub_1',
     })
