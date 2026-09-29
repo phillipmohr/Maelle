@@ -162,6 +162,10 @@ export function createMemoryAgentStore(seed: MemorySeed = {}) {
       if (!t) throw new Error(`Ticket ${ticketId} not found`)
       if (t.status !== from) throw new Error(`Ticket ${ticketId} is ${t.status}, expected ${from}`)
       t.status = to
+      if (from === 'closed') {
+        t.closedAt = null
+        t.resolution = null
+      }
       t.updatedAt = new Date().toISOString()
     },
     async writeProposal({ ticketId, runId, proposal, ticket: patch, fromStatus, toStatus }) {

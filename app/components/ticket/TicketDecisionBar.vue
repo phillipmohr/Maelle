@@ -3,7 +3,8 @@
  * The sticky decision bar. Normal: primary (A), Edit (E), Reject (R), Snooze (S) and a note.
  * Confirm (ember): "Press A again to run N irreversible actions", the effects, Back (Esc),
  * Confirm & execute (A). Failed: Retry (⏎), Mark as done manually, View log. Plus the parked,
- * researching, unclear, manual, auto and closed variants.
+ * researching, unclear, manual, auto and closed variants. A closed ticket can be re-opened: the
+ * agent reads the whole thread again (the last customer message included) and drafts a reply.
  */
 import type { DecisionPhase, DecisionView } from '~/composables/useTicketDecision'
 
@@ -146,6 +147,9 @@ const emit = defineEmits<{
 
     <template v-else-if="view === 'closed'">
       <div class="flex items-center gap-2">
+        <Button variant="secondary" :loading="busy" @click="emit('rerun')"
+          >Re-open and draft a reply</Button
+        >
         <Button variant="ghost" kbd="Esc" @click="emit('toInbox')">Back to the inbox</Button>
       </div>
       <span class="text-right text-caption text-fg-muted">{{ note }}</span>
