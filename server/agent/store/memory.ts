@@ -221,6 +221,7 @@ export function createMemoryAgentStore(seed: MemorySeed = {}) {
         reply: proposal.reply,
         knowledgeRefs: proposal.knowledgeRefs,
         noKnowledgeFound: proposal.noKnowledgeFound,
+        handoffReason: proposal.handoff?.reason ?? null,
         status: 'active',
         createdAt: new Date().toISOString(),
         actions,

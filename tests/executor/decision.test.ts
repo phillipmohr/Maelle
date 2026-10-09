@@ -28,6 +28,17 @@ describe('planApprove', () => {
     expect(plan.replyDraft?.body).toBe(REPLY.body)
   })
 
+  it('refuses to approve a hand-off with 422', () => {
+    const p = makeProposal({
+      actions: [],
+      replyDraft: null,
+      handoffReason: 'Asks about story viewers.',
+    })
+    expect(() => planApprove(p, asIs(p))).toThrowError(
+      expect.objectContaining({ statusCode: 422, data: { error: 'handoff' } }),
+    )
+  })
+
   it('rejects a stale version with 409', () => {
     expect(() => planApprove(makeProposal(), { ...asIs(), proposalVersion: 0 })).toThrowError(
       expect.objectContaining({ statusCode: 409, data: { error: 'stale_version', current: 1 } }),

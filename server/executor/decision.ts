@@ -72,6 +72,11 @@ export function planApprove(proposal: ProposalRecord, input: ApproveInput): Appr
       error: 'unclear_case',
     })
   }
+  if (proposal.handoffReason) {
+    throw new ExecutorError(422, 'Nothing to approve: AnastasAI handed this ticket to you', {
+      error: 'handoff',
+    })
+  }
   const byPosition = new Map(proposal.actions.map((a) => [a.position, a]))
   for (const edit of input.actions ?? []) {
     if (!byPosition.has(edit.position)) {

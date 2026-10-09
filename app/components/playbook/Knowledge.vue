@@ -30,12 +30,18 @@ defineProps<{ data: PlaybookResponse }>()
       <PlaybookLinkRow :href="data.knowledgeBase.url">
         <span class="flex flex-col gap-px">
           <span class="font-semibold">Knowledge Base</span>
-          <span class="text-caption text-fg-muted"
+          <span v-if="data.knowledgeBaseEnabled === false" class="text-caption text-fg-muted"
+            >Off · AnastasAI answers from the templates, the protocol and the examples</span
+          >
+          <span v-else class="text-caption text-fg-muted"
             >Drafts come from "Create KB draft" after a reply</span
           >
         </span>
         <template #meta>
-          <Mono>{{ data.knowledgeBase.active }} active · {{ data.knowledgeBase.draft }} draft</Mono>
+          <Mono v-if="data.knowledgeBaseEnabled === false">off</Mono>
+          <Mono v-else
+            >{{ data.knowledgeBase.active }} active · {{ data.knowledgeBase.draft }} draft</Mono
+          >
         </template>
       </PlaybookLinkRow>
     </div>

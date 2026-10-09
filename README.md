@@ -224,7 +224,7 @@ into `ActivityResponse`, `AutonomyResponse`, `PlaybookResponse` and `LearningRes
 
 `services.autonomy.evaluate(ticketId)` returns `'auto'` only when the case is on Auto, global pause
 is off, neither the ticket nor the proposal is high risk or safety, the case is not unclear, the
-proposal has no policy warnings, no customer confirmation is pending (stage 1), and no enabled action
+proposal is not a hand-off, the proposal has no policy warnings, no customer confirmation is pending (stage 1), and no enabled action
 is locked. Otherwise `'ask'`. The agent calls `services.executor.runAuto(ticketId)` on `'auto'`;
 evaluate never executes anything. A safety or high-risk ticket triggers `notify('high_risk_ticket')`
 once per ticket (deduped in `notifications`) on its way to `'ask'`. `evaluateDetailed()` exposes the
@@ -241,7 +241,8 @@ plus `settings` (the `settings_audit` rows of the same time range, shown as "Set
 
 Read-only links into Notion: protocol sections, the 17 templates with actions and "Confirm first",
 Examples and Knowledge Base counts (live through `NOTION_TOKEN`, cached five minutes; snapshot
-counts otherwise, `liveCounts` says which).
+counts otherwise, `liveCounts` says which). While `KNOWLEDGE_BASE.enabled` is false the Knowledge
+Base row reads "off" (`knowledgeBaseEnabled`) and is not queried.
 
 ### Notifications
 
@@ -377,8 +378,9 @@ The AnastasAI screens from the design (1b to 1f, 3a and 3b), built from the shar
   proposal is the only lit surface; actions are a checklist with editable parameters and "+ Add
   action" from the registry; the reply draft has an editor (E, ⌘⏎ approves) and a check line; the
   research shows evidence tables and log lines on demand; the decision bar has the normal, confirm
-  (ember, "Press A again") and failed modes plus the parked, researching, unclear, manual, auto
-  and closed variants. A closed row opens read only (outcome, sent reply, audit trail).
+  (ember, "Press A again") and failed modes plus the parked, researching, unclear, hand-off
+  (⏎ take over: the ticket goes to manual and you write the reply), manual, auto and closed
+  variants. A closed row opens read only (outcome, sent reply, audit trail).
 - Components live in `app/components/inbox/` and `app/components/ticket/`; the view models and
   the decision state machine in `app/composables/useInboxRows.ts`, `useInboxFilters.ts`,
   `useTicketModel.ts`, `useTicketParams.ts`, `useTicketDecision.ts` (pure factory plus the Nuxt
@@ -398,7 +400,8 @@ The AnastasAI screens from the design (1b to 1f, 3a and 3b), built from the shar
 - Decision API errors: 409 `confirm_required` enters confirm mode, 409 stale reloads the ticket,
   422 warns (safety), 501 says "Not available yet", network errors say so in plain words. After an
   approval with edits or a manual send the toast offers "Save as example?", after a proposal with
-  `noKnowledgeFound` it offers "Create KB draft" (learning endpoints, IRDR-459).
+  `noKnowledgeFound` it offers "Create KB draft" (learning endpoints, IRDR-459) while the
+  Knowledge Base is switched on.
 - Realtime (`useRealtime`) subscribes to `tickets`, `agent_runs` and `action_executions` only when
   `runtimeConfig.public.supabase.url` is a real https URL; with the local placeholder it is a no-op.
 - Tests: `tests/ui/` (view models, filters, params, the decision state machine and the keyboard
@@ -447,7 +450,8 @@ registers the `agent_run` job handler):
    tickets, log errors with counts, tags such as Long-term, New customer, Refund used, Resubscribed,
    Business plan) in code.
 4. **Claude tool-use loop** (`loop.ts`, `prompt.ts`, `tools/definitions.ts`): system prompt from the
-   Notion protocol, the 17 templates, the examples, the knowledge base and the action registry
+   Notion protocol, the 17 templates, the examples, the knowledge base (only while
+   `KNOWLEDGE_BASE.enabled`), the hand-off rule and the action registry
    (cached with `cache_control` across runs); user message with the thread, the research bundle,
    the facts and hints. The whole conversation is cached turn by turn (top-level `cache_control`),
    thinking depth is `AGENT.effort` (medium), and the prompt asks the model to submit routine cases
@@ -461,7 +465,8 @@ registers the `agent_run` job handler):
    (`customerConfirmationNeeded` follows the template plus the detected answer in the thread),
    the risk floor (safety for removal requests, high for chargebacks, open disputes, legal threats
    and long-term customers with an issue), the due date extracted from the message, the recipient,
-   the template reference, `noKnowledgeFound`, the research warnings, the policy warnings
+   the template reference, `noKnowledgeFound` (always false while the Knowledge Base is off), the
+   shape of a hand-off (no reply, no actions), the research warnings, the policy warnings
    (`policy.ts`: refund outside 30 days, refund of an older payment, second refund, deletion without
    cancellation or confirmation, cancel request proposed as immediate, vague reason without an
    ask-first reply) and, for chargebacks, the Stripe timeline attachment. Then `ProposalSchema`
@@ -495,7 +500,16 @@ sources `dataSources.query`, page bodies `blocks.children.list`), caches for `AG
 `knowledge/protocol-snapshot.ts`, kept identical to `customer-support.md` by a test) when the token
 is missing or Notion fails. Examples: only `Status = Active` rows once the property exists. Knowledge
 base: `Status = Active` and `App = InstaRadar`; Draft and Outdated entries are never loaded. The KB
-is empty at snapshot time, so `noKnowledgeFound` is true for most cases until it is filled.
+is empty, so it is switched off (`KNOWLEDGE_BASE.enabled` in `shared/config.ts`, IRDR-477): it is
+not queried, the prompt does not mention it, `noKnowledgeFound` stays false and the UI offers no
+KB draft. Turn it on once it has Active entries.
+
+**Hand-off (IRDR-477).** When the case is clear but no template, rule or fact says how to answer
+(a specific product question, a custom deal, a request the rules do not cover), the agent keeps the
+real case and submits `handoff: { reason }` with no reply and no actions (`ProposalSchema` and
+`finalize.ts` enforce it; `proposals.handoff_reason` stores it). The inbox shows "Needs you", the
+ticket shows the reason and a "Take over" bar; approve is refused (422 `handoff`) and autonomy
+never runs it. `unclear` stays what it was: the case itself is uncertain.
 
 ### Read-only tools and credentials
 

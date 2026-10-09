@@ -106,6 +106,14 @@ describe('decide', () => {
     const none = { ...proposal, actions: proposal.actions.map((a) => ({ ...a, enabled: false })) }
     expect(decide({ ...base, proposal: none }).reason).toBe('no_actions')
   })
+
+  it('never automates a hand-off (no instruction fits)', () => {
+    const handoff = { ...proposal, actions: [], handoffReason: 'Asks about story viewers.' }
+    expect(decide({ ...base, proposal: handoff })).toMatchObject({
+      verdict: 'ask',
+      reason: 'handoff',
+    })
+  })
 })
 
 describe('createAutonomyService', () => {

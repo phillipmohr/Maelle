@@ -48,6 +48,8 @@ export interface Expectation {
   dueDateIs?: string
   attachment?: boolean
   noKnowledgeFound?: boolean
+  /** The proposal hands the ticket to Phillip: no instruction fits, no reply, no actions (IRDR-477). */
+  handoff?: boolean
   /** create_linear_ticket must link this existing issue. */
   linkedIssue?: string
   /** The reply body must contain each of these (case-insensitive). */

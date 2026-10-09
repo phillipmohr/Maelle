@@ -228,18 +228,37 @@ describe('decision state machine', () => {
     expect(toast.done).not.toHaveBeenCalled()
   })
 
-  it('offers a KB draft when no knowledge was found', async () => {
+  it('offers no KB draft while the Knowledge Base is switched off', async () => {
     const { detail, decision, toast } = setup(4824)
+    // Older proposals still carry no_knowledge_found = true.
     detail.value = {
       ...detail.value!,
       proposal: { ...detail.value!.proposal!, noKnowledgeFound: true },
     }
     await decision.approve()
-    expect(toast.offer).toHaveBeenCalledWith(
+    expect(toast.offer).not.toHaveBeenCalledWith(
       'No knowledge found for this case',
       expect.any(String),
-      expect.objectContaining({ label: 'Create KB draft' }),
+      expect.anything(),
     )
+  })
+
+  it('hand-off: no approve, take over goes to manual mode', async () => {
+    const { detail, decision, api } = setup(4824)
+    detail.value = {
+      ...detail.value!,
+      proposal: {
+        ...detail.value!.proposal!,
+        reply: null,
+        actions: [],
+        handoffReason: 'Asks whether story viewers are shown; no instruction covers it.',
+      },
+    }
+    expect(decision.view.value).toBe('handoff')
+    expect(decision.canDecide.value).toBe(false)
+    expect(await decision.takeOver()).toBe(true)
+    expect(api.reject).toHaveBeenCalledWith({ reason: 'handle_myself' })
+    expect(decision.view.value).toBe('manual')
   })
 
   it('reject goes to manual mode, manual send and mark done move on', async () => {
