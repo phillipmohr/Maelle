@@ -263,9 +263,13 @@ describe.skipIf(!url)('IRDR-459 autonomy schema and queries', () => {
 
   it('builds the digest from the seed', async () => {
     const settings = await loadSettings(appId)
+    // The seed puts today's tickets at fixed times of day (#4818 at 07:52); end the window at the
+    // end of today so a run in the early morning still sees them.
+    const endOfToday = new Date()
+    endOfToday.setHours(23, 59, 59, 0)
     const data = await loadDigestData(appId, {
       since: new Date(Date.now() - 3 * 24 * 3_600_000).toISOString(),
-      now: new Date(),
+      now: endOfToday,
       timezone: settings.timezone,
       siteUrl: 'http://localhost:3000',
     })

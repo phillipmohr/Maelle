@@ -204,6 +204,13 @@ export function createTicketDecision(
     () => view.value === 'decide' && phase.value !== 'submitting' && phase.value !== 'executing',
   )
   const canEdit = computed(() => view.value === 'decide' || view.value === 'failed')
+  /** The draft is still unsent and nothing is running: it can be drafted again (3-dot menu). */
+  const canRegenerate = computed(
+    () =>
+      (view.value === 'decide' || view.value === 'unclear' || view.value === 'snoozed') &&
+      phase.value === 'normal' &&
+      !busy.value,
+  )
   const replyDirty = computed(
     () =>
       replyBody.value !== (proposal.value?.reply?.body ?? '') ||
@@ -614,6 +621,20 @@ export function createTicketDecision(
     return true
   }
 
+  /** Drafts the reply again (templates, protocol or settings may have changed); edits are dropped. */
+  async function regenerate() {
+    if (!canRegenerate.value) return false
+    editing.value = false
+    const res = await run(() => deps.api.rerun({ trigger: 'rerun' }))
+    if (!res) return false
+    deps.toast.info(
+      'Regenerating the reply',
+      'AnastasAI drafts it again with the current templates and settings.',
+    )
+    await deps.refresh()
+    return true
+  }
+
   async function undo() {
     const res = await run(() => deps.api.undo())
     if (!res) return false
@@ -648,6 +669,7 @@ export function createTicketDecision(
     lastError,
     canDecide,
     canEdit,
+    canRegenerate,
     dirty,
     replyDirty,
     irreversible,
@@ -671,6 +693,7 @@ export function createTicketDecision(
     unsnooze,
     setCase,
     rerun,
+    regenerate,
     undo,
     scheduleCheck,
   }

@@ -288,6 +288,17 @@ export interface RerunRequest {
   trigger?: Extract<AgentTrigger, 'rerun' | 'case_override'>
 }
 
+// ---------------------------------------------------------------- POST /api/tickets/regenerate-drafts (agent ticket IRDR-456)
+
+/** Every unsent reply draft queued for a new agent run (trigger `rerun`). */
+export interface RegenerateDraftsResponse {
+  /** Tickets queued; already queued or running tickets are not counted again. */
+  count: number
+  ticketIds: string[]
+  /** True while the jobs service is the stub and the runs start inline. */
+  inline: boolean
+}
+
 // ---------------------------------------------------------------- POST /api/agent/consistency-check (agent ticket IRDR-456)
 
 export interface ConsistencyCheckRequest {
@@ -433,6 +444,12 @@ export const ROUTES: readonly RouteSpec[] = [
   { method: 'POST', path: '/api/tickets/:id/case', owner: 'IRDR-457', auth: 'session' },
   { method: 'POST', path: '/api/tickets/:id/undo', owner: 'IRDR-457', auth: 'session' },
   { method: 'POST', path: '/api/tickets/:id/rerun', owner: 'IRDR-456', auth: 'session' },
+  {
+    method: 'POST',
+    path: '/api/tickets/regenerate-drafts',
+    owner: 'IRDR-456',
+    auth: 'session',
+  },
   { method: 'POST', path: '/api/agent/consistency-check', owner: 'IRDR-456', auth: 'session' },
   { method: 'GET', path: '/api/activity', owner: 'IRDR-459', auth: 'session' },
   { method: 'GET', path: '/api/activity/export.csv', owner: 'IRDR-459', auth: 'session' },

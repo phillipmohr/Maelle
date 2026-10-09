@@ -523,6 +523,16 @@ function doneToast() {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <MoreMenu label="Reply options">
+          <DropdownMenuItem
+            description="AnastasAI drafts it again with the current templates and settings"
+            >Regenerate reply</DropdownMenuItem
+          >
+          <DropdownMenuItem disabled description="Nothing is running"
+            >Disabled item</DropdownMenuItem
+          >
+        </MoreMenu>
+
         <Button variant="secondary" @click="doneToast">Success toast</Button>
         <Button
           variant="secondary"

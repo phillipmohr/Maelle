@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * Reply draft: template name (opens Notion), "support@instaradar.app → customer", Edit (E) that
- * turns the body into an editor (⌘⏎ approves), attachments, and the check line (held reason or the
- * consistency warnings after edits).
+ * turns the body into an editor (⌘⏎ approves), the 3-dot menu (Regenerate reply: the agent drafts it
+ * again, e.g. after a template or a setting changed), attachments, and the check line (held reason
+ * or the consistency warnings after edits).
  */
 import type { ConsistencyCheckResponse } from '#shared/api'
 import { notionPageUrl } from '#shared/case-types'
@@ -15,12 +16,14 @@ const props = defineProps<{
   reply: ReplyDraft
   editing: boolean
   editable: boolean
+  /** The draft is unsent and can be drafted again. */
+  regenerable: boolean
   dirty: boolean
   /** Why the reply is not sent (e.g. held until a required action succeeds). */
   held: string | null
   mismatches: ConsistencyCheckResponse['mismatches']
 }>()
-const emit = defineEmits<{ toggleEdit: [force?: boolean]; discard: [] }>()
+const emit = defineEmits<{ toggleEdit: [force?: boolean]; discard: []; regenerate: [] }>()
 const body = defineModel<string>('body', { required: true })
 const subject = defineModel<string>('subject', { required: true })
 
@@ -94,14 +97,27 @@ watch(
             Done <Kbd keys="Esc" />
           </button>
         </span>
-        <button
-          v-else-if="editable"
-          type="button"
-          class="flex items-center gap-[6px] text-fg-muted hover:text-fg"
-          @click="emit('toggleEdit', true)"
-        >
-          Edit <Kbd keys="E" />
-        </button>
+        <span v-else class="flex items-center gap-2">
+          <button
+            v-if="editable"
+            type="button"
+            class="flex items-center gap-[6px] text-fg-muted hover:text-fg"
+            @click="emit('toggleEdit', true)"
+          >
+            Edit <Kbd keys="E" />
+          </button>
+          <MoreMenu label="Reply options" :disabled="!regenerable">
+            <DropdownMenuItem
+              :description="
+                dirty
+                  ? 'Drafts it again with the current templates and settings · your edits are dropped'
+                  : 'Drafts it again with the current templates and settings'
+              "
+              @select="emit('regenerate')"
+              >Regenerate reply</DropdownMenuItem
+            >
+          </MoreMenu>
+        </span>
       </div>
       <div v-if="editing" class="flex flex-col gap-3 px-[18px] pb-[18px] pt-4">
         <label class="flex flex-col gap-1 text-caption text-fg-muted">

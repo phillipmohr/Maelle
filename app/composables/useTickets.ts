@@ -12,6 +12,7 @@ import type {
   ManualSendRequest,
   MarkDoneRequest,
   RejectRequest,
+  RegenerateDraftsResponse,
   RerunRequest,
   SetCaseRequest,
   SnoozeRequest,
@@ -126,6 +127,11 @@ export function useTicket(id: Ref<string> | string) {
     key: `tickets:${idRef.value}`,
     watch: [idRef],
   })
+}
+
+/** Queues a new agent run for every unsent reply draft (inbox 3-dot menu). */
+export function regenerateDrafts() {
+  return $fetch<RegenerateDraftsResponse>('/api/tickets/regenerate-drafts', { method: 'POST' })
 }
 
 /** The decision, agent and learning endpoints for one ticket. Errors are FetchErrors (see classifyActionError). */

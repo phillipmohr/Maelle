@@ -134,6 +134,11 @@ export const AGENT = {
   researchNudgeTurn: 4,
   sourceTimeoutMs: 20_000,
   knowledgeCacheTtlMs: 5 * 60_000,
+  /**
+   * A regenerate (trigger `rerun`) reads the Notion instructions at most this old, so a template or
+   * protocol edit shows up in the next regenerated reply; a bulk regenerate shares one fetch.
+   */
+  rerunKnowledgeMaxAgeMs: 60_000,
 } as const
 
 /** Job runner budgets (Vercel function max duration is 300 s, see nuxt.config.ts). */

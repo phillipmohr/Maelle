@@ -23,6 +23,14 @@ export function needsDecision(i: InboxItem): boolean {
   return (DECISION_STATUSES as readonly string[]).includes(i.status)
 }
 
+/**
+ * Unsent drafts the inbox's 3-dot menu can regenerate: tickets waiting for a decision on a proposal.
+ * The server decides the final set (reply present, no run queued); this is the count in the menu.
+ */
+export function regenerableDrafts(items: readonly InboxItem[]): InboxItem[] {
+  return items.filter((i) => i.status === 'needs_decision' && i.proposalLine !== null)
+}
+
 /** Age of a ticket: since it was opened (the oldest waits first, whatever happened in between). */
 export function ageBasis(i: InboxItem): string {
   return i.createdAt
