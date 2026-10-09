@@ -263,10 +263,10 @@ describe.skipIf(!url)('inbound mail', () => {
       const r = await fetchMail(ctx)
       expect(r.ticketsCreated).toBe(1)
 
-      // Older than 30 days → new ticket.
+      // Older than 30 days → new ticket (measured from the context's clock, not the database's).
       await db.query(
-        `update public.tickets set last_message_at = now() - interval '40 days', created_at = now() - interval '40 days' where id = $1`,
-        [ticket.id],
+        `update public.tickets set last_message_at = $2::timestamptz - interval '40 days', created_at = $2::timestamptz - interval '40 days' where id = $1`,
+        [ticket.id, ctx.now()],
       )
       ctx.provider.inject(
         buildEml({
