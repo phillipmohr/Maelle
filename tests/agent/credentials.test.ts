@@ -113,7 +113,7 @@ describe('agent credentials (runtime)', () => {
     const c = agentRuntimeConfig({} as NodeJS.ProcessEnv)
     expect(c.model).toBe('claude-sonnet-5-5')
     expect(c.smallModel).toBe('claude-sonnet-5-5')
-    expect(c.effort).toBe('medium')
+    expect(c.effort).toBe('high')
     expect(c.researchNudgeTurn).toBe(4)
     expect(c.vercelTeamSlug).toBe('phillip-mohrs-projects')
     expect(c.vercelProject).toBe('instaradar')

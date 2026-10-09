@@ -125,8 +125,8 @@ export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 /** Agent tuning. */
 export const AGENT = {
   maxIterations: 16,
-  /** Thinking depth of the agent run (`output_config.effort`); the model default would be high. */
-  effort: 'medium' as Effort,
+  /** Thinking depth of the agent run (`output_config.effort`). */
+  effort: 'high' as Effort,
   /**
    * From this research turn on, the tool results carry a nudge to submit with what is known unless
    * one specific fact is still missing. The hard stop stays `maxIterations`.
