@@ -478,6 +478,15 @@ Triggers: `new_ticket`, `customer_reply` (detects "Yes, refund" or a change of m
 (drafts the "it's live" email from the Linear issue in `release_notifications` and the original
 thread; drafted from the protocol until a "Release notification" template exists in Notion).
 
+**Regenerate.** Every unsent reply can be drafted again from the 3-dot menu on the reply draft (or
+⌘K "Regenerate the reply"): a `rerun` run that drops the editor's unsaved edits. The inbox header's
+3-dot menu (or ⌘K) regenerates all unsent drafts at once after a confirm:
+`POST /api/tickets/regenerate-drafts` queues one `rerun` job per ticket in `needs_decision` whose
+active proposal has a reply and that has no agent run queued or running (`server/agent/regenerate.ts`;
+snoozed tickets are left alone, a run would wake them). A `rerun` reads the Notion knowledge at most
+`AGENT.rerunKnowledgeMaxAgeMs` (one minute) old, so a template or protocol edit shows up in the new
+draft; settings are read fresh on every run anyway.
+
 ### Knowledge
 
 `knowledge/loader.ts` reads Notion at runtime with `NOTION_TOKEN` (`@notionhq/client`, data

@@ -13,6 +13,7 @@ import {
   nextTicketNumber,
   parkedGroups,
   proposalText,
+  regenerableDrafts,
   researchChecklist,
   returnLabel,
   rowDot,
@@ -26,6 +27,17 @@ const items = list.items
 const by = (n: number) => items.find((i) => i.displayNumber === n)!
 
 describe('inbox rows', () => {
+  it('counts the unsent drafts the 3-dot menu regenerates: needs decision with a proposal', () => {
+    const drafts = regenerableDrafts(items)
+    expect(drafts.length).toBeGreaterThan(0)
+    expect(drafts.every((d) => d.status === 'needs_decision' && d.proposalLine !== null)).toBe(true)
+    const researching = { ...by(4824), status: 'researching' as const }
+    const snoozed = { ...by(4824), status: 'snoozed' as const }
+    const noProposal = { ...by(4824), proposalLine: null }
+    expect(regenerableDrafts([researching, snoozed, noProposal])).toEqual([])
+    expect(regenerableDrafts([by(4824)])).toEqual([by(4824)])
+  })
+
   it('shows imported history tickets as Imported with no decision', () => {
     expect(
       decisionPill({ resolution: null, decision: null, importedAt: '2026-09-29T00:00:00Z' }),

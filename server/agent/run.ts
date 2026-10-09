@@ -5,6 +5,7 @@
  */
 import type { MessageRow, TicketRow } from '#shared/api'
 import type { CaseType } from '#shared/case-types'
+import { AGENT } from '#shared/config'
 import type { AgentRunResult, AgentTrigger, Services } from '#shared/services'
 import { canTransition, transition, type TicketStatus } from '#shared/status'
 import type { AttachmentStore } from './attachments/store'
@@ -147,7 +148,10 @@ export async function runAgent(
 
   try {
     const messages = await store.getMessages(ticketId)
-    const knowledgeP = deps.knowledge.load()
+    // A regenerate exists because instructions or settings changed: read Notion fresh enough.
+    const knowledgeP = deps.knowledge.load(
+      trigger === 'rerun' ? { maxAgeMs: AGENT.rerunKnowledgeMaxAgeMs } : undefined,
+    )
     const emailHistory = async (emails: string[]) => {
       const lists = await Promise.all(emails.map((e) => store.getPreviousTickets(e, ticketId)))
       const seen = new Set<string>()

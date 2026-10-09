@@ -281,6 +281,41 @@ describe('decision state machine', () => {
     expect(toast.warning).toHaveBeenCalled()
   })
 
+  it('regenerates an unsent reply: drops edits, reruns, refuses while busy or after the decision', async () => {
+    const { decision, api, toast, deps, detail } = setup(4824)
+    expect(decision.canRegenerate.value).toBe(true)
+    decision.toggleEdit(true)
+    decision.replyBody.value = 'My own words'
+    expect(await decision.regenerate()).toBe(true)
+    expect(api.rerun).toHaveBeenCalledWith({ trigger: 'rerun' })
+    expect(decision.editing.value).toBe(false)
+    expect(toast.info).toHaveBeenCalledWith('Regenerating the reply', expect.any(String))
+    expect(deps.refresh).toHaveBeenCalled()
+
+    const set = (status: TicketDetailResponse['ticket']['status']) =>
+      (detail.value = { ...detail.value!, ticket: { ...detail.value!.ticket, status } })
+    set('snoozed')
+    expect(decision.canRegenerate.value).toBe(true)
+    for (const s of ['researching', 'executing', 'auto_pending', 'closed', 'manual'] as const) {
+      set(s)
+      expect(decision.canRegenerate.value, s).toBe(false)
+    }
+    set('closed')
+    expect(await decision.regenerate()).toBe(false)
+    expect(api.rerun).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a failed regenerate and keeps the draft', async () => {
+    const { decision, toast } = setup(4824, {
+      rerun: vi.fn(async () => {
+        throw fetchError(500)
+      }),
+    })
+    expect(await decision.regenerate()).toBe(false)
+    expect(toast.error).toHaveBeenCalled()
+    expect(decision.canRegenerate.value).toBe(true)
+  })
+
   it('maps views for every ticket status', () => {
     const { detail, decision } = setup(4824)
     const set = (status: TicketDetailResponse['ticket']['status']) =>

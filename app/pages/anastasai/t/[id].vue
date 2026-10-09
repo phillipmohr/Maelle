@@ -226,6 +226,13 @@ registerCommands([
     run: () => decision.rerun(),
   },
   {
+    id: 'ticket.cmd.regenerate',
+    label: 'Regenerate the reply',
+    group: 'Ticket',
+    when: () => decision.canRegenerate.value && Boolean(proposal.value?.reply),
+    run: () => decision.regenerate(),
+  },
+  {
     id: 'ticket.cmd.reopen',
     label: 'Re-open and draft a reply',
     group: 'Ticket',
@@ -403,11 +410,13 @@ watch(currentNumber, () => {
         :reply="proposal.reply"
         :editing="decision.editing.value"
         :editable="decision.canEdit.value"
+        :regenerable="decision.canRegenerate.value"
         :dirty="decision.replyDirty.value"
         :held="heldReason"
         :mismatches="decision.mismatches.value"
         @toggle-edit="(f) => decision.toggleEdit(f)"
         @discard="decision.discardEdits"
+        @regenerate="decision.regenerate"
       />
 
       <TicketResearchSection

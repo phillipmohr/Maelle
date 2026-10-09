@@ -9,7 +9,12 @@ import { loadSnapshotKnowledge } from './snapshot'
 import type { Knowledge } from './types'
 
 export interface KnowledgeLoader {
-  load(opts?: { force?: boolean }): Promise<Knowledge>
+  /**
+   * `force` skips the cache; `maxAgeMs` accepts the cache only when it is younger than that (a
+   * regenerate wants instructions edited a minute ago, without refetching Notion for every ticket of
+   * a bulk run).
+   */
+  load(opts?: { force?: boolean; maxAgeMs?: number }): Promise<Knowledge>
   /** Tests: drop the cache. */
   reset(): void
 }
@@ -52,7 +57,8 @@ export function createKnowledgeLoader(deps: {
   return {
     async load(opts) {
       const t = now().getTime()
-      if (!opts?.force && cached && t - cached.at < ttl) return cached.value
+      const maxAge = Math.min(ttl, opts?.maxAgeMs ?? ttl)
+      if (!opts?.force && cached && t - cached.at < maxAge) return cached.value
       if (!inflight) {
         inflight = fetchFresh()
           .then((value) => {

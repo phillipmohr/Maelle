@@ -198,6 +198,25 @@ describe('knowledge loader', () => {
     await loader.load({ force: true })
   })
 
+  it('accepts the cache only up to maxAgeMs (regenerate) and shares one fetch', async () => {
+    const notion = createFakeNotionReadClient({}, { fail: 'boom' })
+    let t = 0
+    const loader = createKnowledgeLoader({ notion, ttlMs: 300_000, now: () => new Date(t) })
+    await loader.load()
+    const calls = notion.calls.length
+    t = 30_000
+    await loader.load({ maxAgeMs: 60_000 })
+    expect(notion.calls.length).toBe(calls) // younger than a minute: cached
+    t = 90_000
+    await Promise.all([loader.load({ maxAgeMs: 60_000 }), loader.load({ maxAgeMs: 60_000 })])
+    const refreshed = notion.calls.length
+    expect(refreshed).toBeGreaterThan(calls) // older than a minute: refetched once
+    await loader.load({ maxAgeMs: 60_000 })
+    expect(notion.calls.length).toBe(refreshed)
+    await loader.load({ maxAgeMs: 10 * 60_000 }) // never longer than the TTL
+    expect(notion.calls.length).toBe(refreshed)
+  })
+
   it('uses Notion when it works', async () => {
     const notion = createFakeNotionReadClient({
       dataSources: {},

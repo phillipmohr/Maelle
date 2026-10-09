@@ -7,11 +7,22 @@
 import type { TicketListItem } from '#shared/api'
 import { useCommands } from '~/composables/useCommands'
 import { closedQuery, useInboxFilters } from '~/composables/useInboxFilters'
-import { autoRows, inboxSummary, needsDecisionRows, parkedGroups } from '~/composables/useInboxRows'
+import {
+  autoRows,
+  inboxSummary,
+  needsDecisionRows,
+  parkedGroups,
+  regenerableDrafts,
+} from '~/composables/useInboxRows'
 import { useRealtime } from '~/composables/useRealtime'
 import { useShortcuts, useShortcutScope } from '~/composables/useShortcuts'
 import { useTicketClock } from '~/composables/useTicketClock'
-import { useClosedTickets, useTicketActions, useTicketList } from '~/composables/useTickets'
+import {
+  regenerateDrafts,
+  useClosedTickets,
+  useTicketActions,
+  useTicketList,
+} from '~/composables/useTickets'
 import { useToast } from '~/composables/useToast'
 
 useHead({ title: 'Inbox' })
@@ -70,6 +81,36 @@ async function undo(t: TicketListItem) {
   }
 }
 
+// 3-dot menu: draft every unsent reply again (templates, protocol or settings changed).
+const draftCount = computed(() => regenerableDrafts(items.value).length)
+const regenerateOpen = ref(false)
+const regenerating = ref(false)
+async function regenerateAll() {
+  if (regenerating.value) return
+  regenerating.value = true
+  try {
+    const res = await regenerateDrafts()
+    regenerateOpen.value = false
+    toast.info(
+      res.count > 0
+        ? `Regenerating ${res.count} ${res.count === 1 ? 'draft' : 'drafts'}`
+        : 'Nothing to regenerate',
+      res.count > 0
+        ? 'The tickets show as researching until the new drafts are ready.'
+        : 'Every unsent draft is already being drafted again.',
+    )
+    await refreshList()
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    toast.error(
+      'Could not regenerate the drafts',
+      status === 503 ? 'Needs the database (SUPABASE_DB_URL).' : 'Nothing was queued · try again.',
+    )
+  } finally {
+    regenerating.value = false
+  }
+}
+
 const table = ref<{ focusSelected: () => void } | null>(null)
 const { register } = useShortcuts()
 register([
@@ -79,7 +120,7 @@ register([
     label: 'Next ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value,
+    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
     handler: () => {
       selected.value = Math.min(selected.value + 1, rows.value.length - 1)
       table.value?.focusSelected()
@@ -91,7 +132,7 @@ register([
     label: 'Previous ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value,
+    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
     handler: () => {
       selected.value = Math.max(selected.value - 1, 0)
       table.value?.focusSelected()
@@ -103,7 +144,7 @@ register([
     label: 'Open the selected ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value,
+    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
     handler: () => open(rows.value[selected.value]),
   },
   {
@@ -112,11 +153,19 @@ register([
     label: 'Filter closed tickets',
     group: 'Inbox',
     scope: 'inbox',
+    when: () => !regenerateOpen.value,
     handler: () => (closedFiltersOpen.value = !closedFiltersOpen.value),
   },
 ])
 
 useCommands().register([
+  {
+    id: 'inbox.regenerateDrafts',
+    label: 'Regenerate all unsent drafts',
+    group: 'Inbox',
+    when: () => draftCount.value > 0,
+    run: () => (regenerateOpen.value = true),
+  },
   {
     id: 'inbox.openFirst',
     label: 'Open the first ticket that needs a decision',
@@ -138,7 +187,17 @@ watch(() => route.hash, scrollToHash)
 
 <template>
   <div class="grid flex-1 auto-rows-max content-start gap-7 overflow-auto px-12 pb-12 pt-9">
-    <InboxHeader :summary="summary" />
+    <InboxHeader
+      :summary="summary"
+      :draft-count="draftCount"
+      @regenerate-all="regenerateOpen = true"
+    />
+    <InboxRegenerateDialog
+      v-model:open="regenerateOpen"
+      :count="draftCount"
+      :busy="regenerating"
+      @confirm="regenerateAll"
+    />
 
     <InboxNeedsDecisionTable
       v-if="rows.length > 0"
