@@ -9,6 +9,7 @@ import { createDbAgentStore } from '../../../server/agent/store/db'
 import { createScriptedModelClient } from '../../../server/agent/model/scripted'
 import { runAgent } from '../../../server/agent/run'
 import { CASE_1_CANCELLATION, CASE_2_REFUND } from '../../../evals/fixtures/cases'
+import { HANDOFF_STORY_VIEWERS } from '../../../evals/fixtures/handoff'
 import type { Fixture } from '../../../evals/fixtures/types'
 import { NOW, SUPPORT } from '../../../evals/fixtures/worlds'
 import { checkExpectations, harnessDeps, scriptedTurns } from '../../../evals/harness'
@@ -149,6 +150,29 @@ describe.skipIf(!url)('agent runs against Postgres', () => {
       [ticketId],
     )
     expect(count.rows[0]!.n).toBe(1)
+  })
+
+  it('a hand-off is stored with its reason, no reply and no actions; a reply next to it is refused', async () => {
+    const ticketId = await insertTicket(HANDOFF_STORY_VIEWERS)
+    const deps = harnessDeps(HANDOFF_STORY_VIEWERS, store, { now: NOW })
+    const result = await runAgent(deps, ticketId, 'new_ticket')
+    expect(result.status, result.error).toBe('succeeded')
+    const ticket = (await store.getTicket(ticketId))!
+    const proposal = (await store.getLatestProposal(ticketId))!
+    expect(checkExpectations(proposal, ticket, HANDOFF_STORY_VIEWERS.expect)).toEqual([])
+    expect(ticket).toMatchObject({ status: 'needs_decision', caseType: 'product_question' })
+    expect(proposal.handoffReason).toMatch(/story viewers/)
+
+    const row = await db.query(
+      `select handoff_reason, reply_draft, no_knowledge_found from public.proposals where id = $1`,
+      [proposal.id],
+    )
+    expect(row.rows[0]).toMatchObject({ reply_draft: null, no_knowledge_found: false })
+    await expect(
+      db.query(`update public.proposals set reply_draft = '{"body":"x"}'::jsonb where id = $1`, [
+        proposal.id,
+      ]),
+    ).rejects.toThrow(/proposals_handoff_no_reply/)
   })
 
   it('rerun from needs_decision writes v2 and supersedes v1', async () => {

@@ -48,10 +48,13 @@ const DESCRIPTIONS: Record<string, string> = {
   actions:
     'Actions from the registry in registry order, Send reply last. Each: type, params (exactly the schema of that action), reason ("Because: ..."), stage now|after_confirmation, requiredForReply, enabled.',
   reply:
-    'The reply draft: template (Notion template name or null), templateNotionPageId, to, subject, body (plain text, paragraphs separated by blank lines, no em dash), attachments []. Null only for "unclear".',
+    'The reply draft: template (Notion template name or null), templateNotionPageId, to, subject, body (plain text, paragraphs separated by blank lines, no em dash), attachments []. Null only for "unclear" and a hand-off.',
   knowledgeRefs:
     'Every template and knowledge base entry you used: kind template|kb|example|protocol, notionPageId, title.',
-  noKnowledgeFound: 'True when no knowledge base entry fits the question.',
+  noKnowledgeFound:
+    'True when no knowledge base entry fits the question. Leave false while the prompt has no knowledge base section.',
+  handoff:
+    'Null, unless the case is clear but no template, rule or fact tells you how to answer: then { reason } (one sentence for Phillip), reply null and actions [].',
   translations:
     'For every customer message that is not in English: its messageId and an English translation.',
 }

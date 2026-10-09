@@ -112,6 +112,7 @@ export function seedTicketList(bundle: SeedBundle, now: Date = new Date()): Tick
       whatRan: whatRan(bundle, t.id as string),
       decision: (decision?.decision as TicketListItem['decision']) ?? null,
       decisionNote: (decision?.note as string | null) ?? null,
+      handoffReason: (active?.handoff_reason as string | null | undefined) ?? null,
     }
   })
   const day = 24 * 3_600_000

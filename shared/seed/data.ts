@@ -543,6 +543,7 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
       title: string
     }[]
     noKnowledgeFound?: boolean
+    handoffReason?: string | null
     status?: 'active' | 'superseded' | 'decided'
     actions: SeedAction[]
     createdAt: Date
@@ -592,6 +593,7 @@ export function buildSeed(now: Date = new Date(), allowedUserEmail?: string): Se
         : null,
       knowledge_refs: p.knowledgeRefs ?? [],
       no_knowledge_found: p.noKnowledgeFound ?? false,
+      handoff_reason: p.handoffReason ?? null,
       status: p.status ?? 'active',
       created_at: iso(p.createdAt),
     })

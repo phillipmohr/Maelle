@@ -5,6 +5,7 @@
  */
 import type { PlaybookResponse } from '#shared/api'
 import { NOTION, TEMPLATE_CASE_TYPES, CASE_TYPES, notionPageUrl } from '#shared/case-types'
+import { KNOWLEDGE_BASE } from '#shared/config'
 import { loadPlaybookCounts } from '../learning/notion-counts'
 
 export default defineEventHandler(async (): Promise<PlaybookResponse> => {
@@ -37,5 +38,6 @@ export default defineEventHandler(async (): Promise<PlaybookResponse> => {
       url: notionPageUrl(NOTION.knowledgeBaseDatabaseId),
     },
     liveCounts: counts.live,
+    knowledgeBaseEnabled: KNOWLEDGE_BASE.enabled,
   }
 })

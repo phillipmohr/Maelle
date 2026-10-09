@@ -55,6 +55,7 @@ describe('seed data', () => {
         reply: p.reply_draft,
         knowledgeRefs: p.knowledge_refs,
         noKnowledgeFound: p.no_knowledge_found,
+        handoff: p.handoff_reason ? { reason: p.handoff_reason } : null,
       })
       if (!result.success) {
         throw new Error(

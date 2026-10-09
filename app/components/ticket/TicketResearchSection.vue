@@ -2,9 +2,10 @@
 /**
  * Research: warning chips, "4 sources · 22s", findings with source chips (open Stripe, Notion,
  * Linear or the ticket), evidence tables in mono, "Show log lines", the conclusion and the
- * "No knowledge found" chip.
+ * "No knowledge found" chip (only while the Knowledge Base is switched on).
  */
 import type { AgentRunRow, ProposalRow, TicketUsage } from '#shared/api'
+import { KNOWLEDGE_BASE } from '#shared/config'
 import { researchMeta, sourceLink } from '~/composables/useTicketModel'
 import { formatCost } from '~/utils/format'
 
@@ -43,7 +44,7 @@ function toggle(kind: 'e' | 'l', i: number) {
           class="max-w-full whitespace-normal [overflow-wrap:anywhere]"
           >{{ w }}</StatusPill
         >
-        <StatusPill v-if="proposal.noKnowledgeFound" status="neutral"
+        <StatusPill v-if="KNOWLEDGE_BASE.enabled && proposal.noKnowledgeFound" status="neutral"
           >No knowledge found</StatusPill
         >
         <Mono class="text-[11px]">{{ meta }}</Mono>

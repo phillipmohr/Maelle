@@ -224,7 +224,7 @@ function doneToast() {
             time="4m"
             sub="Researching"
             risk="research"
-            research="Stripe ✓  Supabase ✓  Vercel ⋯  KB ✓"
+            research="Stripe ✓  Supabase ✓  Vercel ⋯  Notion ✓"
           />
           <TicketRow
             name="Daniel Okafor"

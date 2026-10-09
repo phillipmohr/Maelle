@@ -59,6 +59,8 @@ export interface ProposalRecord {
   policyWarnings: string[]
   riskLevel: RiskLevel
   replyDraft: ReplyDraft | null
+  /** Set when the agent handed the ticket to Phillip: nothing to approve (IRDR-477). */
+  handoffReason?: string | null
   status: 'active' | 'superseded' | 'decided'
   createdAt: string
   actions: ProposedActionRecord[]

@@ -1,8 +1,8 @@
 /**
  * Turns a `submit_proposal` tool input into a validated Proposal. Deterministic code owns the
  * decisions that must not depend on the model: the confirmation stage, the risk floor, the due
- * date, policy warnings, research warnings, knowledge refs, the recipient and the chargeback
- * attachment. Whatever remains invalid is fed back to the model as issues.
+ * date, policy warnings, research warnings, knowledge refs, the recipient, the chargeback
+ * attachment and the shape of a hand-off (no reply, no actions). Whatever remains invalid is fed back to the model as issues.
  */
 import { z } from 'zod'
 import { isActionType, sortByActionOrder } from '#shared/actions'
@@ -159,6 +159,19 @@ export async function finalizeSubmission(
     }
   }
 
+  // Hand-off (IRDR-477): Phillip answers, so a drafted reply or proposed action is dropped.
+  const handoff = rest.handoff as Obj | null | undefined
+  if (handoff && typeof handoff === 'object' && caseKey !== 'unclear') {
+    if (rest.reply) {
+      rest.reply = null
+      notes.push('reply removed: a hand-off has no reply draft.')
+    }
+    if (Array.isArray(rest.actions) && rest.actions.length > 0) {
+      rest.actions = []
+      notes.push('actions removed: a hand-off has no actions.')
+    }
+  }
+
   // Recipient: always the ticket's customer (the bank for a chargeback).
   const reply = rest.reply as Obj | null | undefined
   if (reply && typeof reply === 'object') {
@@ -206,7 +219,8 @@ export async function finalizeSubmission(
     }
   }
 
-  // Knowledge refs: the template used is always listed; noKnowledgeFound follows the kb refs.
+  // Knowledge refs: the template used is always listed; noKnowledgeFound follows the kb refs and
+  // stays false while the Knowledge Base is switched off.
   const refs: KnowledgeRef[] = Array.isArray(rest.knowledgeRefs)
     ? (rest.knowledgeRefs as KnowledgeRef[]).filter((k) => k && typeof k === 'object')
     : []
@@ -223,7 +237,7 @@ export async function finalizeSubmission(
     }
   }
   rest.knowledgeRefs = refs
-  rest.noKnowledgeFound = !refs.some((k) => k.kind === 'kb')
+  rest.noKnowledgeFound = ctx.knowledge.knowledgeBaseEnabled && !refs.some((k) => k.kind === 'kb')
 
   // Research warnings: code knows which sources failed.
   const modelWarnings = Array.isArray(rest.researchWarnings)
@@ -240,7 +254,7 @@ export async function finalizeSubmission(
   if (!parsed.success)
     return { ok: false, issues: withNotes(formatProposalIssues(parsed.error), notes) }
   const proposal = parsed.data
-  proposal.metaLine ??= proposalMetaLine(proposal)
+  proposal.metaLine ??= proposal.handoff ? 'Hand-off · nothing drafted' : proposalMetaLine(proposal)
 
   // Policy warnings in code.
   const pw = policyWarnings(proposal, policyContextFor(ctx, proposal.case))

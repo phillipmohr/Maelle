@@ -208,8 +208,18 @@ registerCommands([
     label: 'Snooze',
     group: 'Ticket',
     keys: 's',
-    when: () => (view.value === 'decide' || view.value === 'unclear') && canSnooze.value,
+    when: () =>
+      (view.value === 'decide' || view.value === 'unclear' || view.value === 'handoff') &&
+      canSnooze.value,
     run: () => (snoozeOpen.value = true),
+  },
+  {
+    id: 'ticket.cmd.takeOver',
+    label: 'Take over',
+    group: 'Ticket',
+    keys: 'enter',
+    when: () => view.value === 'handoff',
+    run: () => decision.takeOver(),
   },
   {
     id: 'ticket.cmd.case',
@@ -461,6 +471,7 @@ watch(currentNumber, () => {
       @undo="decision.undo"
       @rerun="decision.rerun"
       @pick-case="casePickerOpen = true"
+      @take-over="decision.takeOver"
       @send="composer?.submit()"
       @to-inbox="navigateTo('/anastasai')"
     />

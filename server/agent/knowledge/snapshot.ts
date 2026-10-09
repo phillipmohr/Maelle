@@ -4,6 +4,7 @@
  * in protocol-snapshot.ts (kept in sync by a test).
  */
 import { caseTypeFromLabel } from '#shared/case-types'
+import { KNOWLEDGE_BASE } from '#shared/config'
 import examplesJson from '../../../docs/notion/examples.json'
 import templatesJson from '../../../docs/notion/templates.json'
 import { PROTOCOL_SNAPSHOT } from './protocol-snapshot'
@@ -38,19 +39,21 @@ export function snapshotExamples(): KnowledgeExample[] {
 }
 
 /**
- * The snapshot of the Knowledge Base has no rows (the database was empty on 2026-09-27), so
- * `noKnowledgeFound` is true for most cases until Phillip fills it. Tests inject entries.
+ * The snapshot of the Knowledge Base has no rows (the database was empty on 2026-09-27). The
+ * Knowledge Base is off by default (`KNOWLEDGE_BASE.enabled`); tests switch it on and inject entries.
  */
 export async function loadSnapshotKnowledge(
-  opts: { knowledgeBase?: KnowledgeBaseEntry[] } = {},
+  opts: { knowledgeBase?: KnowledgeBaseEntry[]; knowledgeBaseEnabled?: boolean } = {},
 ): Promise<Knowledge> {
+  const knowledgeBaseEnabled = opts.knowledgeBaseEnabled ?? KNOWLEDGE_BASE.enabled
   return {
     source: 'snapshot',
     loadedAt: '2026-09-27T00:00:00.000Z',
     protocol: PROTOCOL_SNAPSHOT,
     templates: snapshotTemplates(),
     examples: snapshotExamples(),
-    knowledgeBase: opts.knowledgeBase ?? [],
+    knowledgeBase: knowledgeBaseEnabled ? (opts.knowledgeBase ?? []) : [],
+    knowledgeBaseEnabled,
     warnings: [],
   }
 }

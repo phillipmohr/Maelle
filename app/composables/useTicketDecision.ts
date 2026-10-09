@@ -1,6 +1,7 @@
 /**
  * The decision state machine behind the ticket page: normal → confirm (A twice for irreversible
  * actions) → executing, plus edit, reject → manual, snooze, retry, mark done, case change, undo.
+ * A hand-off proposal (no instruction fits, IRDR-477) has no reply to approve: take over → manual.
  * `createTicketDecision` is pure (dependencies injected) so the flows are unit tested;
  * `useTicketDecision` wires it to the API, the toaster and navigation.
  */
@@ -14,6 +15,7 @@ import type {
 } from '#shared/api'
 import { ACTIONS, type ActionType } from '#shared/actions'
 import type { CaseType } from '#shared/case-types'
+import { KNOWLEDGE_BASE } from '#shared/config'
 import type { ExecutionSummary, RejectReason } from '#shared/services'
 import type { ShortcutDef } from '~/composables/useShortcuts'
 import type { TicketActionsApi } from '~/composables/useTickets'
@@ -33,6 +35,7 @@ export type DecisionView =
   | 'loading'
   | 'researching'
   | 'unclear'
+  | 'handoff'
   | 'decide'
   | 'executing'
   | 'failed'
@@ -181,6 +184,7 @@ export function createTicketDecision(
         return 'researching'
       case 'needs_decision':
         if (t.caseType === 'unclear' || proposal.value?.caseType === 'unclear') return 'unclear'
+        if (proposal.value?.handoffReason) return 'handoff'
         return phase.value === 'executing' ? 'executing' : 'decide'
       case 'executing':
         return 'executing'
@@ -325,7 +329,7 @@ export function createTicketDecision(
     } else {
       deps.toast.done(title, lines)
     }
-    if (proposal.value?.noKnowledgeFound) {
+    if (KNOWLEDGE_BASE.enabled && proposal.value?.noKnowledgeFound) {
       deps.toast.offer(
         'No knowledge found for this case',
         'Turn this ticket into a knowledge base draft?',
@@ -520,6 +524,11 @@ export function createTicketDecision(
     return true
   }
 
+  /** Hand-off: Phillip writes the reply himself (the ticket goes to manual). */
+  function takeOver() {
+    return reject('handle_myself')
+  }
+
   async function manualSend(input: {
     body: string
     subject?: string
@@ -686,6 +695,7 @@ export function createTicketDecision(
     addAction,
     removeAction,
     reject,
+    takeOver,
     manualSend,
     markDone,
     retry,
@@ -782,9 +792,18 @@ export function ticketShortcutDefs(ctx: TicketShortcutContext): ShortcutDef[] {
       scope: 'ticket',
       when: () =>
         free() &&
-        (d.view.value === 'decide' || d.view.value === 'unclear') &&
+        (d.view.value === 'decide' || d.view.value === 'unclear' || d.view.value === 'handoff') &&
         d.ticket.value?.riskLevel !== 'safety',
       handler: ctx.openSnooze,
+    },
+    {
+      id: 'ticket.takeOver',
+      keys: 'enter',
+      label: 'Take over (write the reply yourself)',
+      group: 'Decision',
+      scope: 'ticket',
+      when: () => free() && d.view.value === 'handoff' && !d.busy.value,
+      handler: () => void d.takeOver(),
     },
     {
       id: 'ticket.unsnooze',

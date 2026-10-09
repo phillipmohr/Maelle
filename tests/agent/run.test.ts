@@ -389,3 +389,35 @@ describe('createAgentService', () => {
     }
   })
 })
+
+describe('hand-off and the switched-off Knowledge Base (IRDR-477)', () => {
+  it('a hand-off drops the reply and the actions the model drafted anyway', async () => {
+    const { store, ticketId, result } = await run(CASE_1_CANCELLATION, [
+      submit({
+        ...good,
+        summaryLine: 'Hand over: asks whether story viewers are shown.',
+        handoff: { reason: 'Asks whether story viewers are shown; no instruction covers it.' },
+      }),
+    ])
+    expect(result.status).toBe('succeeded')
+    expect(result.notes?.join(' ')).toMatch(/reply removed: a hand-off/)
+    const p = (await store.getLatestProposal(ticketId))!
+    expect(p.handoffReason).toMatch(/story viewers/)
+    expect(p.metaLine).toBe('Hand-off · nothing drafted')
+    expect(p.reply).toBeNull()
+    expect(p.actions).toEqual([])
+    expect(p.noKnowledgeFound).toBe(false)
+    expect((await store.getTicket(ticketId))!.status).toBe('needs_decision')
+  })
+
+  it('a routine proposal has no hand-off and no knowledge-base flag while the KB is off', async () => {
+    const { model, store, ticketId } = await run(CASE_1_CANCELLATION, [submit(good)])
+    const p = (await store.getLatestProposal(ticketId))!
+    expect(p.handoffReason).toBeNull()
+    expect(p.noKnowledgeFound).toBe(false)
+    const system = JSON.stringify(model.requests[0]!.system)
+    expect(system).toMatch(/Hand-off: the case is clear, the answer is not/)
+    expect(system).not.toMatch(/## Knowledge base \(Notion/)
+    expect(system).not.toMatch(/Set \\?`noKnowledgeFound\\?` when/)
+  })
+})

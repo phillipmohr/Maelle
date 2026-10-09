@@ -333,7 +333,12 @@ export function headerPills(
       if (ticket.stage === 2) pills.push({ status: 'success', label: 'Customer confirmed' })
       pills.push({
         status: 'draft',
-        label: ticket.caseType === 'unclear' ? 'Pick the case' : 'Needs decision',
+        label:
+          ticket.caseType === 'unclear'
+            ? 'Pick the case'
+            : proposal?.handoffReason
+              ? 'Needs you'
+              : 'Needs decision',
       })
       break
     case 'executing':

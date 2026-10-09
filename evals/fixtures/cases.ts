@@ -103,7 +103,7 @@ export const CASE_1_CANCELLATION: Fixture = {
       knowledgeRefs: [
         { kind: 'template', notionPageId: TPL.cancellation_only, title: 'Cancellation only' },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {
@@ -180,7 +180,7 @@ const marcoStage1: ProposalInput = {
       title: 'Refund request (latest payment)',
     },
   ],
-  noKnowledgeFound: true,
+  noKnowledgeFound: false,
 }
 
 export const CASE_2_REFUND: Fixture = {
@@ -376,7 +376,7 @@ export const CASE_3_CHARGEBACK: Fixture = {
       knowledgeRefs: [
         { kind: 'template', notionPageId: TPL.chargeback, title: 'Chargeback / bank dispute' },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {
@@ -478,7 +478,7 @@ export const CASE_4_BUG: Fixture = {
         body: "Hi Priya, thanks for reporting this!\n\nI looked into your account and our logs, and you're right: this is a bug on our side. A temporary error from Instagram is read as a deleted post, so nothing was actually deleted from @studio.kolo. I'm sorry for the confusion it caused.\n\nGood to know: this only affects the deletion alerts. Your follower list and activity timeline for @studio.kolo, @kolo.ceramics and @priya.makes are still 100% accurate.\n\nI've passed it to our engineering team with your details, and I'll email you personally as soon as the fix is live. Thanks for helping us make InstaRadar better!\n\nBest regards,\nAnastasia\nInstaRadar Support",
       },
       knowledgeRefs: [{ kind: 'template', notionPageId: TPL.bug_report, title: 'Bug report' }],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {
@@ -573,7 +573,7 @@ export const CASE_5_FEATURE: Fixture = {
           title: 'Feature request / feedback',
         },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {
@@ -657,7 +657,7 @@ export const CASE_6_SAFETY: Fixture = {
       knowledgeRefs: [
         { kind: 'template', notionPageId: TPL.safety_removal, title: 'Safety / removal request' },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {

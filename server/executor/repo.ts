@@ -128,7 +128,7 @@ export async function updateTicketStatus(
 // ---------------------------------------------------------------- proposals
 
 const PROPOSAL_COLUMNS = `id, ticket_id, version, case_type, stage, customer_confirmation_needed, policy_warnings,
-  risk_level, reply_draft, status, created_at`
+  risk_level, reply_draft, handoff_reason, status, created_at`
 
 async function withActions(q: Queryable, row: Row): Promise<ProposalRecord> {
   const a = await q.query<Row>(
@@ -156,6 +156,7 @@ async function withActions(q: Queryable, row: Row): Promise<ProposalRecord> {
     policyWarnings: (row.policy_warnings as string[]) ?? [],
     riskLevel: row.risk_level as RiskLevel,
     replyDraft: (row.reply_draft as ReplyDraft | null) ?? null,
+    handoffReason: (row.handoff_reason as string | null) ?? null,
     status: row.status as ProposalRecord['status'],
     createdAt: iso(row.created_at) ?? new Date(0).toISOString(),
     actions,

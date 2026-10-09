@@ -51,5 +51,7 @@ export interface Knowledge {
   examples: KnowledgeExample[]
   /** Status = Active and App = InstaRadar only. Draft and Outdated entries are never loaded. */
   knowledgeBase: KnowledgeBaseEntry[]
+  /** False while the Knowledge Base is switched off (`KNOWLEDGE_BASE.enabled`): `knowledgeBase` is empty and ignored. */
+  knowledgeBaseEnabled: boolean
   warnings: string[]
 }

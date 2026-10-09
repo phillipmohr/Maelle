@@ -55,6 +55,7 @@ export async function loadEvaluateContextFromDb(ticketId: string): Promise<Evalu
       policyWarnings: (p.policy_warnings as string[] | null) ?? [],
       customerConfirmationNeeded: Boolean(p.customer_confirmation_needed),
       stage: Number(p.stage) === 2 ? 2 : 1,
+      handoffReason: (p.handoff_reason as string | null) ?? null,
       actions: actions.map((a) => ({
         type: a.action_type as ActionType,
         enabled: a.enabled !== false,

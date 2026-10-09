@@ -141,6 +141,15 @@ export const AGENT = {
   rerunKnowledgeMaxAgeMs: 60_000,
 } as const
 
+/**
+ * The Notion Knowledge Base (IRDR-477). Off while it is empty: the agent does not read it, the prompt
+ * does not mention it, `noKnowledgeFound` stays false and nothing offers a KB draft. Templates,
+ * protocol and examples are read either way. Turn it on once the database has Active entries.
+ */
+export const KNOWLEDGE_BASE = {
+  enabled: false,
+} as const
+
 /** Job runner budgets (Vercel function max duration is 300 s, see nuxt.config.ts). */
 export const JOBS = {
   tickBudgetMs: 270_000,
