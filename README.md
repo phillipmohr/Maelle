@@ -454,7 +454,7 @@ registers the `agent_run` job handler):
    `KNOWLEDGE_BASE.enabled`), the hand-off rule and the action registry
    (cached with `cache_control` across runs); user message with the thread, the research bundle,
    the facts and hints. The whole conversation is cached turn by turn (top-level `cache_control`),
-   thinking depth is `AGENT.effort` (medium), and the prompt asks the model to submit routine cases
+   thinking depth is `AGENT.effort` (high), and the prompt asks the model to submit routine cases
    without research and to make every needed tool call in one turn; from `AGENT.researchNudgeTurn`
    on, the tool results carry a nudge to submit with what is known (IRDR-463). Read-only tools:
    `stripe_events`, `stripe_search_customers`, `stripe_retrieve`, `instaradar_select` (one guarded
@@ -521,7 +521,7 @@ never runs it. `unclear` stays what it was: the case itself is uncertain.
 | Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_API_KEY`                                                  |
 | Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_TOKEN`                                                    |
 | Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                              |
-| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-sonnet-5-5`, `AGENT.effort` medium), consistency check `MODELS.small` (`claude-sonnet-5-5`, low effort)                                       | `ANTHROPIC_API_KEY`                                               |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-sonnet-5-5`, `AGENT.effort` high), consistency check `MODELS.small` (`claude-sonnet-5-5`, low effort)                                       | `ANTHROPIC_API_KEY`                                               |
 
 Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
 Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by

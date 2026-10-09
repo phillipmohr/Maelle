@@ -48,7 +48,7 @@ describe('agent loop cost controls', () => {
     expect(result.status).toBe('succeeded')
     expect(model.requests).toHaveLength(2)
     for (const req of model.requests) {
-      expect(req.output_config?.effort).toBe('medium')
+      expect(req.output_config?.effort).toBe('high')
       expect(req.cache_control).toEqual({ type: 'ephemeral' })
       expect(req.tool_choice).toEqual({ type: 'auto' })
       const system = req.system as Anthropic.TextBlockParam[]
