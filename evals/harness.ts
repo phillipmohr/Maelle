@@ -185,7 +185,12 @@ export function harnessDeps(
     model: opts.model ?? scriptedModel(opts.scripted ?? fixture.scripted),
     knowledge: createKnowledgeLoader({
       notion: null,
-      snapshot: () => loadSnapshotKnowledge({ knowledgeBase: fixture.knowledgeBase ?? [] }),
+      // The Knowledge Base is off by default (IRDR-477); fixtures that bring entries switch it on.
+      snapshot: () =>
+        loadSnapshotKnowledge({
+          knowledgeBase: fixture.knowledgeBase ?? [],
+          knowledgeBaseEnabled: (fixture.knowledgeBase?.length ?? 0) > 0,
+        }),
     }),
     attachments: createMemoryAttachmentStore(),
     config,
@@ -319,7 +324,14 @@ export function checkExpectations(
     )
       f.push(`create_linear_ticket should link ${exp.linkedIssue}`)
   }
-  if (proposal.caseType !== 'unclear') {
+  if (exp.handoff) {
+    if (!proposal.handoffReason) f.push('expected a hand-off')
+    if (proposal.reply) f.push('a hand-off has no reply draft')
+    if (proposal.actions.length > 0) f.push('a hand-off has no actions')
+  } else if (proposal.handoffReason) {
+    f.push(`unexpected hand-off: ${proposal.handoffReason}`)
+  }
+  if (proposal.caseType !== 'unclear' && !exp.handoff) {
     if (!proposal.reply) f.push('expected a reply draft')
     else {
       if (EM_DASH_RE.test(proposal.reply.body) || EM_DASH_RE.test(proposal.reply.subject))

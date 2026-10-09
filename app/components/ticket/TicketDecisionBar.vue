@@ -3,7 +3,7 @@
  * The sticky decision bar. Normal: primary (A), Edit (E), Reject (R), Snooze (S) and a note.
  * Confirm (ember): "Press A again to run N irreversible actions", the effects, Back (Esc),
  * Confirm & execute (A). Failed: Retry (⏎), Mark as done manually, View log. Plus the parked,
- * researching, unclear, manual, auto and closed variants. A closed ticket can be re-opened: the
+ * researching, unclear, hand-off (no instruction fits: take over), manual, auto and closed variants. A closed ticket can be re-opened: the
  * agent reads the whole thread again (the last customer message included) and drafts a reply.
  */
 import type { DecisionPhase, DecisionView } from '~/composables/useTicketDecision'
@@ -31,6 +31,7 @@ const emit = defineEmits<{
   undo: []
   rerun: []
   pickCase: []
+  takeOver: []
   send: []
   toInbox: []
 }>()
@@ -142,6 +143,17 @@ const emit = defineEmits<{
       </div>
       <span class="text-right text-caption text-fg-muted"
         >Classification was unsure · pick from the candidates and the research runs again</span
+      >
+    </template>
+
+    <template v-else-if="view === 'handoff'">
+      <div class="flex items-center gap-2">
+        <Button kbd="⏎" :loading="busy" @click="emit('takeOver')">Take over</Button>
+        <Button variant="ghost" @click="emit('rerun')">Re-run research</Button>
+        <Button v-if="canSnooze" variant="ghost" kbd="S" @click="emit('snooze')">Snooze</Button>
+      </div>
+      <span class="text-right text-caption text-fg-muted"
+        >No instruction fits · AnastasAI drafted nothing, the reply is yours</span
       >
     </template>
 

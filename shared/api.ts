@@ -153,6 +153,8 @@ export interface ProposalRow {
   reply: ReplyDraft | null
   knowledgeRefs: KnowledgeRef[]
   noKnowledgeFound: boolean
+  /** Set when the agent handed the ticket to Phillip: no reply, no actions (IRDR-477). */
+  handoffReason: string | null
   status: 'active' | 'superseded' | 'decided'
   createdAt: string
   actions: ProposedActionRow[]
@@ -224,6 +226,8 @@ export interface TicketListItem extends TicketRow {
   whatRan: string | null
   decision: DecisionKind | null
   decisionNote: string | null
+  /** The latest proposal hands the ticket to Phillip: no instruction fits (IRDR-477). */
+  handoffReason: string | null
 }
 
 export interface TicketListResponse {
@@ -502,6 +506,8 @@ export interface PlaybookResponse {
   /** True when the counts were read from Notion (NOTION_TOKEN), false for the snapshot. */
   liveCounts?: boolean
   examplesStatus?: { active: number; draft: number }
+  /** False while the agent ignores the Knowledge Base (`KNOWLEDGE_BASE.enabled`, IRDR-477). */
+  knowledgeBaseEnabled?: boolean
 }
 
 export interface LearningResponse {

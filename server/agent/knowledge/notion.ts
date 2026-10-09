@@ -4,6 +4,7 @@
  * are edited by humans.
  */
 import { NOTION, caseTypeFromLabel, notionPageUrl } from '#shared/case-types'
+import { KNOWLEDGE_BASE } from '#shared/config'
 import type { NotionReadClient, NotionRow } from '../types'
 import type { Knowledge, KnowledgeBaseEntry, KnowledgeExample, KnowledgeTemplate } from './types'
 
@@ -100,12 +101,16 @@ export function filterActiveKb(
 export async function loadKnowledgeFromNotion(
   notion: NotionReadClient,
   now: Date = new Date(),
+  opts: { knowledgeBaseEnabled?: boolean } = {},
 ): Promise<Knowledge> {
+  const knowledgeBaseEnabled = opts.knowledgeBaseEnabled ?? KNOWLEDGE_BASE.enabled
   const [protocol, templateRows, exampleRows, kbRows] = await Promise.all([
     notion.getPageText(NOTION.customerSupportPageId),
     notion.queryDataSource(NOTION.templatesCollectionId),
     notion.queryDataSource(NOTION.examplesCollectionId),
-    notion.queryDataSource(NOTION.knowledgeBaseCollectionId),
+    knowledgeBaseEnabled
+      ? notion.queryDataSource(NOTION.knowledgeBaseCollectionId)
+      : Promise.resolve([] as NotionRow[]),
   ])
   const templates = templateRows.map(templateFromRow).filter((t): t is KnowledgeTemplate => !!t)
   const warnings: string[] = []
@@ -126,6 +131,7 @@ export async function loadKnowledgeFromNotion(
     knowledgeBase: filterActiveKb(
       kbRows.map(kbEntryFromRow).filter((e): e is KnowledgeBaseEntry => !!e),
     ),
+    knowledgeBaseEnabled,
     warnings,
   }
 }

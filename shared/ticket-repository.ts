@@ -253,7 +253,7 @@ async function relatedRowsForList(exec: QueryExecutor, ticketIds: string[]) {
   }
   const [proposals, agent_runs, decisions, action_executions] = await Promise.all([
     exec(
-      `select id, ticket_id, version, summary_line from public.proposals where ticket_id = any($1::uuid[])`,
+      `select id, ticket_id, version, summary_line, handoff_reason from public.proposals where ticket_id = any($1::uuid[])`,
       [ticketIds],
     ),
     exec(
@@ -371,7 +371,7 @@ export async function ticketDetailFromDb(
       `select id, ticket_id, run_id, version, case_type, confidence, candidate_cases, summary_line,
         meta_line, risk_level, risk_reason, due_date::text as due_date, customer_confirmation_needed,
         stage, research, research_warnings, policy_warnings, conclusion, reply_draft, knowledge_refs,
-        no_knowledge_found, status, created_at
+        no_knowledge_found, handoff_reason, status, created_at
        from public.proposals where ticket_id = $1 order by version desc`,
       [id],
     ),

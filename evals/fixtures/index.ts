@@ -1,5 +1,6 @@
 import { CASE_FIXTURES } from './cases'
 import { EXAMPLE_FIXTURES } from './examples'
+import { HANDOFF_FIXTURES } from './handoff'
 import type { Fixture } from './types'
 
 export * from './types'
@@ -15,5 +16,6 @@ export {
   CASE_7_DATA_ACCURACY,
 } from './cases'
 export { EXAMPLE_FIXTURES } from './examples'
+export { HANDOFF_FIXTURES, HANDOFF_STORY_VIEWERS } from './handoff'
 
-export const ALL_FIXTURES: Fixture[] = [...CASE_FIXTURES, ...EXAMPLE_FIXTURES]
+export const ALL_FIXTURES: Fixture[] = [...CASE_FIXTURES, ...EXAMPLE_FIXTURES, ...HANDOFF_FIXTURES]

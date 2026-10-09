@@ -28,7 +28,9 @@ export function needsDecision(i: InboxItem): boolean {
  * The server decides the final set (reply present, no run queued); this is the count in the menu.
  */
 export function regenerableDrafts(items: readonly InboxItem[]): InboxItem[] {
-  return items.filter((i) => i.status === 'needs_decision' && i.proposalLine !== null)
+  return items.filter(
+    (i) => i.status === 'needs_decision' && i.proposalLine !== null && !i.handoffReason,
+  )
 }
 
 /** Age of a ticket: since it was opened (the oldest waits first, whatever happened in between). */
@@ -110,7 +112,7 @@ const SOURCE_LABEL: Record<(typeof SOURCE_ORDER)[number], string> = {
   stripe: 'Stripe',
   supabase: 'Supabase',
   vercel: 'Vercel',
-  kb: 'KB',
+  kb: 'Notion',
   linear: 'Linear',
   email: 'Email',
 }
@@ -118,12 +120,12 @@ const SOURCE_LONG: Record<(typeof SOURCE_ORDER)[number], string> = {
   stripe: 'Stripe billing',
   supabase: 'Supabase activity',
   vercel: 'Vercel logs',
-  kb: 'the knowledge base',
+  kb: 'the Notion instructions',
   linear: 'Linear',
   email: 'the email history',
 }
 
-/** "Stripe ✓  Supabase ✓  Vercel ⋯  KB ✓" (skipped sources and the always-read email thread are left out). */
+/** "Stripe ✓  Supabase ✓  Vercel ⋯  Notion ✓" (skipped sources and the always-read email thread are left out). */
 export function researchChecklist(progress: AgentRunRow['progress'] | null | undefined): string {
   if (!progress) return ''
   return SOURCE_ORDER.filter((k) => k !== 'email' && progress[k] && progress[k] !== 'skipped')
@@ -156,6 +158,8 @@ export function rowPill(i: InboxItem): { status: PillStatus; label: string; dot?
   if (i.riskLevel === 'safety') return { status: 'error', label: 'Safety' }
   if (i.riskLevel === 'high') return { status: 'warning', label: 'High risk' }
   if (i.caseType === 'unclear') return { status: 'draft', label: 'Pick the case' }
+  if (i.status === 'needs_decision' && i.handoffReason)
+    return { status: 'draft', label: 'Needs you' }
   if (i.caseType && CASE_TYPES[i.caseType].requiresConfirmation) {
     if (i.stage === 1) return { status: 'info', label: 'Needs confirmation' }
     return { status: 'success', label: 'Customer confirmed' }

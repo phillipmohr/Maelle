@@ -69,6 +69,16 @@ export const KnowledgeRefSchema = z.object({
 })
 export type KnowledgeRef = z.infer<typeof KnowledgeRefSchema>
 
+/**
+ * Hand-off (IRDR-477): the case is clear, but no template, rule or fact tells the agent how to
+ * answer. No reply and no actions; Phillip takes over. Not `unclear` (that is an uncertain case).
+ */
+export const HandoffSchema = z.object({
+  /** One sentence for Phillip: what the customer wants and which instruction or fact is missing. */
+  reason: z.string().min(1).max(300),
+})
+export type Handoff = z.infer<typeof HandoffSchema>
+
 export const CandidateCaseSchema = z.object({
   case: CaseTypeSchema,
   confidence: z.number().min(0).max(1),
@@ -128,10 +138,12 @@ export const ProposalSchema = z
     policyWarnings: z.array(z.string().max(300)).default([]),
     conclusion: z.string().max(500).nullable().default(null),
     actions: z.array(ProposedActionSchema).max(11).default([]),
-    /** Null only for `unclear` proposals. */
+    /** Null only for `unclear` and hand-off proposals. */
     reply: ReplyDraftSchema.nullable(),
     knowledgeRefs: z.array(KnowledgeRefSchema).default([]),
     noKnowledgeFound: z.boolean().default(false),
+    /** Set when no instruction fits: no reply, no actions, Phillip takes over (IRDR-477). */
+    handoff: HandoffSchema.nullable().default(null),
   })
   .superRefine((p, ctx) => {
     // Registry order, Send reply last.
@@ -172,6 +184,30 @@ export const ProposalSchema = z
           code: 'custom',
           path: ['actions'],
           message: 'Unclear proposals have no actions.',
+        })
+      }
+      if (p.handoff) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['handoff'],
+          message:
+            'A hand-off keeps the real case; unclear proposals list candidate cases instead.',
+        })
+      }
+    } else if (p.handoff) {
+      // Hand-off: Phillip answers and decides, so nothing is drafted or proposed.
+      if (p.reply) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['reply'],
+          message: 'A hand-off has no reply draft (reply null).',
+        })
+      }
+      if (p.actions.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['actions'],
+          message: 'A hand-off has no actions.',
         })
       }
     } else if (!p.reply && p.actions.length === 0) {

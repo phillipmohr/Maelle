@@ -1,9 +1,11 @@
 /**
  * Live counts for the Playbook (Examples, Knowledge Base Active / Draft) through the Notion read
- * token, cached for five minutes. Snapshot counts when the token is missing or Notion fails.
+ * token, cached for five minutes. Snapshot counts when the token is missing or Notion fails. The
+ * Knowledge Base is not queried while it is switched off (`KNOWLEDGE_BASE.enabled`).
  */
 import { Client } from '@notionhq/client'
 import { NOTION } from '#shared/case-types'
+import { KNOWLEDGE_BASE } from '#shared/config'
 
 export interface StatusCounts {
   total: number
@@ -59,7 +61,9 @@ export async function fetchPlaybookCounts(token: string): Promise<PlaybookCounts
     )
   const [examples, knowledgeBase] = await Promise.all([
     count(NOTION.examplesCollectionId),
-    count(NOTION.knowledgeBaseCollectionId),
+    KNOWLEDGE_BASE.enabled
+      ? count(NOTION.knowledgeBaseCollectionId)
+      : Promise.resolve(SNAPSHOT_COUNTS.knowledgeBase),
   ])
   return { examples, knowledgeBase, live: true }
 }

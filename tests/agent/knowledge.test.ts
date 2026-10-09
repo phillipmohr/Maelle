@@ -163,13 +163,22 @@ describe('notion row mapping', () => {
       },
       pages: { '3e8c931f6ae58012a0a7ec9a1adb4259': '# Protocol\n- Never use em-dashes' },
     })
-    const k = await loadKnowledgeFromNotion(notion)
+    const k = await loadKnowledgeFromNotion(notion, new Date(), { knowledgeBaseEnabled: true })
     expect(k.source).toBe('notion')
     expect(k.templates).toHaveLength(2)
     expect(k.examples).toHaveLength(0)
     expect(k.knowledgeBase).toHaveLength(1)
+    expect(k.knowledgeBaseEnabled).toBe(true)
     expect(k.protocol).toMatch(/em-dashes/)
     expect(k.warnings.join(' ')).toMatch(/Brand new template/)
+
+    // Switched off (the default, IRDR-477): the Knowledge Base is not even queried.
+    notion.calls.length = 0
+    const off = await loadKnowledgeFromNotion(notion)
+    expect(off.knowledgeBaseEnabled).toBe(false)
+    expect(off.knowledgeBase).toEqual([])
+    expect(off.templates).toHaveLength(2)
+    expect(notion.calls).not.toContain('query:3e8c931f-6ae5-80fb-9152-000bf28ecfbd')
   })
 })
 

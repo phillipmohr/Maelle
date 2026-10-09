@@ -74,6 +74,10 @@ describe('inbox rows', () => {
     expect(rowPill(by(4820))).toEqual({ status: 'error', label: 'Action failed' })
     expect(rowPill(by(4828))).toEqual({ status: 'info', label: 'Researching' })
     expect(rowPill(by(4824))).toEqual({ status: 'draft', label: 'Needs decision' })
+    // A hand-off (no instruction fits) waits for you, not for a decision on a draft.
+    const handoff = { ...by(4824), handoffReason: 'Asks about story viewers.' }
+    expect(rowPill(handoff)).toEqual({ status: 'draft', label: 'Needs you' })
+    expect(regenerableDrafts([handoff])).toEqual([])
     expect(rowDot(by(4825))).toBe('high')
     expect(rowDot(by(4820))).toBe('failed')
     expect(rowDot(by(4828))).toBe('research')
@@ -88,7 +92,7 @@ describe('inbox rows', () => {
     expect(caseText(amelie)).toBe('Classifying…')
     expect(proposalText(amelie)).toBe('Researching · Vercel logs and Linear still loading')
     expect(researchChecklist(amelie.runProgress)).toBe(
-      'Stripe ✓  Supabase ✓  Vercel ⋯  KB ✓  Linear ⋯',
+      'Stripe ✓  Supabase ✓  Vercel ⋯  Notion ✓  Linear ⋯',
     )
     expect(researchChecklist(null)).toBe('')
     expect(caseText(by(4825))).toBe('Chargeback / bank dispute')

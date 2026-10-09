@@ -1,5 +1,8 @@
 <script setup lang="ts">
-/** The proposal: the only lit surface. Proposal line, meta, provenance, policy warnings. */
+/**
+ * The proposal: the only lit surface. Proposal line, meta, provenance, policy warnings, and for a
+ * hand-off (no instruction fits, IRDR-477) why AnastasAI left the reply to you.
+ */
 import type { ProposalRow } from '#shared/api'
 import { provenanceLine } from '~/composables/useTicketModel'
 
@@ -17,6 +20,10 @@ const provenance = computed(() => provenanceLine(props.proposal))
       <p class="font-serif text-heading leading-[1.2] text-fg [text-wrap:pretty]">
         {{ proposal.summaryLine }}
       </p>
+      <div v-if="proposal.handoffReason" class="flex flex-col items-start gap-2">
+        <StatusPill status="draft">Needs you</StatusPill>
+        <p class="text-body text-fg [text-wrap:pretty]">{{ proposal.handoffReason }}</p>
+      </div>
       <Provenance>{{ provenance }}</Provenance>
       <div v-if="proposal.policyWarnings.length" class="flex flex-col gap-[6px] pt-1">
         <div

@@ -29,7 +29,8 @@ const MESSAGE_COLUMNS = `id, ticket_id, direction, from_email, from_name, to_ema
 
 const PROPOSAL_COLUMNS = `id, ticket_id, run_id, version, case_type, confidence, candidate_cases, summary_line,
   meta_line, risk_level, risk_reason, due_date::text as due_date, customer_confirmation_needed, stage, research,
-  research_warnings, policy_warnings, conclusion, reply_draft, knowledge_refs, no_knowledge_found, status, created_at`
+  research_warnings, policy_warnings, conclusion, reply_draft, knowledge_refs, no_knowledge_found, handoff_reason,
+  status, created_at`
 
 async function proposalWithActions(
   q: <T extends pg.QueryResultRow>(text: string, params?: unknown[]) => Promise<T[]>,
@@ -227,8 +228,8 @@ export function createDbAgentStore(): AgentStore {
         const inserted = await q<{ id: string }>(
           `insert into public.proposals (ticket_id, run_id, version, case_type, confidence, candidate_cases, summary_line,
              meta_line, risk_level, risk_reason, due_date, customer_confirmation_needed, stage, research, research_warnings,
-             policy_warnings, conclusion, reply_draft, knowledge_refs, no_knowledge_found, status)
-           values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18::jsonb, $19::jsonb, $20, 'active')
+             policy_warnings, conclusion, reply_draft, knowledge_refs, no_knowledge_found, handoff_reason, status)
+           values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, 'active')
            returning id`,
           [
             ticketId,
@@ -251,6 +252,7 @@ export function createDbAgentStore(): AgentStore {
             proposal.reply ? JSON.stringify(proposal.reply) : null,
             JSON.stringify(proposal.knowledgeRefs),
             proposal.noKnowledgeFound,
+            proposal.handoff?.reason ?? null,
           ],
         )
         const proposalId = inserted[0]!.id

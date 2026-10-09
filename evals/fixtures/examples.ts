@@ -124,7 +124,7 @@ const EX_2: Fixture = {
       knowledgeRefs: [
         { kind: 'template', notionPageId: TPL.data_accuracy, title: 'Data accuracy concern' },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {
@@ -221,7 +221,7 @@ const EX_5: Fixture = {
           title: 'Billing question / disputed charge',
         },
       ],
-      noKnowledgeFound: true,
+      noKnowledgeFound: false,
     },
   },
   expect: {

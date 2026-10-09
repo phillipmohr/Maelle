@@ -27,6 +27,8 @@ export interface EvaluateProposal {
   customerConfirmationNeeded: boolean
   stage: 1 | 2
   actions: { type: ActionType; enabled: boolean; stage: ActionStage }[]
+  /** Set when the agent handed the ticket to Phillip (IRDR-477). */
+  handoffReason?: string | null
 }
 
 export interface EvaluateContext {
@@ -48,6 +50,7 @@ export type EvaluateReason =
   | 'high_risk'
   | 'no_proposal'
   | 'unclear'
+  | 'handoff'
   | 'paused'
   | 'always_ask'
   | 'policy_warnings'
@@ -92,6 +95,7 @@ export function decide(ctx: EvaluateContext): EvaluateResult {
   if (!p) return ask('no_proposal', 'No active proposal')
   const caseType = p.caseType ?? t.caseType
   if (!caseType || caseType === 'unclear') return ask('unclear', 'The case is unclear')
+  if (p.handoffReason) return ask('handoff', 'No instruction fits, handed to you')
   if (ctx.globalPause) return ask('paused', 'Automation is paused')
   if (ctx.mode !== 'auto') return ask('always_ask', `${caseType} is on Always ask`)
   if (p.policyWarnings.length > 0) {

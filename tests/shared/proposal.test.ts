@@ -60,6 +60,36 @@ describe('ProposalSchema', () => {
     expect(p.reply?.attachments).toEqual([])
   })
 
+  it('accepts a hand-off: the real case, no reply, no actions (IRDR-477)', () => {
+    const handoff = {
+      ...base,
+      case: 'product_question' as const,
+      summaryLine: 'Hand over: asks whether story viewers are shown.',
+      actions: [],
+      reply: null,
+      handoff: { reason: 'Asks whether story viewers are shown; no instruction covers it.' },
+    }
+    expect(ProposalSchema.parse(handoff).handoff?.reason).toMatch(/story viewers/)
+    expect(ProposalSchema.parse(base).handoff).toBeNull()
+
+    const withReply = ProposalSchema.safeParse({ ...handoff, reply: base.reply })
+    expect(withReply.success).toBe(false)
+    if (!withReply.success)
+      expect(formatProposalIssues(withReply.error).join('\n')).toMatch(/hand-off has no reply/)
+
+    const withActions = ProposalSchema.safeParse({ ...handoff, actions: base.actions })
+    expect(withActions.success).toBe(false)
+
+    const unclear = ProposalSchema.safeParse({
+      ...handoff,
+      case: 'unclear',
+      candidateCases: [{ case: 'product_question', confidence: 0.4 }],
+    })
+    expect(unclear.success).toBe(false)
+    if (!unclear.success)
+      expect(formatProposalIssues(unclear.error).join('\n')).toMatch(/keeps the real case/)
+  })
+
   it('validates action params through the registry', () => {
     const r = ProposalSchema.safeParse({
       ...base,
