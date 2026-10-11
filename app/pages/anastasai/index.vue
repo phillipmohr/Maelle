@@ -4,10 +4,12 @@
  * "Needs decision" table on top (or the cleared state), parked and auto-handled rows, then the
  * closed history with filters, day groups and infinite scroll. ⏎ opens the selected row, J/K move.
  */
-import type { TicketListItem } from '#shared/api'
+import type { ApproveAllPreviewResponse, TicketListItem } from '#shared/api'
 import { useCommands } from '~/composables/useCommands'
 import { closedQuery, useInboxFilters } from '~/composables/useInboxFilters'
 import {
+  approvableDrafts,
+  approveAllToast,
   autoRows,
   inboxSummary,
   needsDecisionRows,
@@ -18,6 +20,8 @@ import { useRealtime } from '~/composables/useRealtime'
 import { useShortcuts, useShortcutScope } from '~/composables/useShortcuts'
 import { useTicketClock } from '~/composables/useTicketClock'
 import {
+  approveAll,
+  previewApproveAll,
   regenerateDrafts,
   useClosedTickets,
   useTicketActions,
@@ -111,6 +115,61 @@ async function regenerateAll() {
   }
 }
 
+// 3-dot menu: approve and send every eligible unsent reply as proposed (IRDR-481).
+const approvableCount = computed(() => approvableDrafts(items.value).length)
+const approveAllOpen = ref(false)
+const approveAllPreview = ref<ApproveAllPreviewResponse | null>(null)
+const approveAllLoading = ref(false)
+const approveAllError = ref<string | null>(null)
+const approving = ref(false)
+async function openApproveAll() {
+  approveAllOpen.value = true
+  approveAllPreview.value = null
+  approveAllError.value = null
+  approveAllLoading.value = true
+  try {
+    approveAllPreview.value = await previewApproveAll()
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    approveAllError.value =
+      status === 503
+        ? 'Needs the database (SUPABASE_DB_URL).'
+        : 'The unsent replies could not be loaded · nothing was sent, try again.'
+  } finally {
+    approveAllLoading.value = false
+  }
+}
+async function confirmApproveAll() {
+  const preview = approveAllPreview.value
+  if (approving.value || !preview) return
+  approving.value = true
+  try {
+    const res = await approveAll({
+      tickets: preview.eligible.map((t) => ({
+        ticketId: t.ticketId,
+        proposalVersion: t.proposalVersion,
+      })),
+    })
+    approveAllOpen.value = false
+    const t = approveAllToast(res)
+    if (t.tone === 'error') toast.error(t.title, t.description)
+    else toast.info(t.title, t.description)
+    await refreshList()
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status
+    toast.error(
+      'Could not send the replies',
+      status === 503
+        ? 'Needs the database (SUPABASE_DB_URL).'
+        : 'The request failed · check the inbox before trying again.',
+    )
+    await refreshList()
+  } finally {
+    approving.value = false
+  }
+}
+const dialogOpen = computed(() => regenerateOpen.value || approveAllOpen.value)
+
 const table = ref<{ focusSelected: () => void } | null>(null)
 const { register } = useShortcuts()
 register([
@@ -120,7 +179,7 @@ register([
     label: 'Next ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
+    when: () => !closedFiltersOpen.value && !dialogOpen.value,
     handler: () => {
       selected.value = Math.min(selected.value + 1, rows.value.length - 1)
       table.value?.focusSelected()
@@ -132,7 +191,7 @@ register([
     label: 'Previous ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
+    when: () => !closedFiltersOpen.value && !dialogOpen.value,
     handler: () => {
       selected.value = Math.max(selected.value - 1, 0)
       table.value?.focusSelected()
@@ -144,7 +203,7 @@ register([
     label: 'Open the selected ticket',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !closedFiltersOpen.value && !regenerateOpen.value,
+    when: () => !closedFiltersOpen.value && !dialogOpen.value,
     handler: () => open(rows.value[selected.value]),
   },
   {
@@ -153,12 +212,19 @@ register([
     label: 'Filter closed tickets',
     group: 'Inbox',
     scope: 'inbox',
-    when: () => !regenerateOpen.value,
+    when: () => !dialogOpen.value,
     handler: () => (closedFiltersOpen.value = !closedFiltersOpen.value),
   },
 ])
 
 useCommands().register([
+  {
+    id: 'inbox.approveAll',
+    label: 'Approve and send all unsent replies',
+    group: 'Inbox',
+    when: () => approvableCount.value > 0,
+    run: openApproveAll,
+  },
   {
     id: 'inbox.regenerateDrafts',
     label: 'Regenerate all unsent drafts',
@@ -190,7 +256,17 @@ watch(() => route.hash, scrollToHash)
     <InboxHeader
       :summary="summary"
       :draft-count="draftCount"
+      :approvable-count="approvableCount"
       @regenerate-all="regenerateOpen = true"
+      @approve-all="openApproveAll"
+    />
+    <InboxApproveAllDialog
+      v-model:open="approveAllOpen"
+      :preview="approveAllPreview"
+      :loading="approveAllLoading"
+      :error="approveAllError"
+      :busy="approving"
+      @confirm="confirmApproveAll"
     />
     <InboxRegenerateDialog
       v-model:open="regenerateOpen"

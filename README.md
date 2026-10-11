@@ -79,7 +79,7 @@ to shared code are additive only (new fields, new tables, new migrations, never 
 | `supabase/migrations/20260927000000_foundation.sql`, `scripts/`, `server/middleware/`, `server/utils/`                                                                                                                                                                                                     | IRDR-454             | Schema, RLS, seed and migration scripts, auth middleware, service registry                                                                     |
 | `server/mail/`, `server/jobs/`, `server/api/cron/`, `server/api/webhooks/`, `docs/adr/001-jobs.md`                                                                                                                                                                                                         | IRDR-455 mail + jobs | Fetch, thread, send, job runner, recurring jobs, Linear webhook, health alerts                                                                 |
 | `server/agent/`, `server/api/agent/`, `server/api/tickets/[id]/rerun.post.ts`, `evals/`                                                                                                                                                                                                                    | IRDR-456 agent       | Claude tool-use loop, read-only tools, knowledge from Notion, policy guardrails, consistency check, eval fixtures                              |
-| `server/executor/`, `server/api/tickets/[id]/*.post.ts` (approve, reject, manual-send, snooze, unsnooze, retry, mark-done, case, undo)                                                                                                                                                                     | IRDR-457 executor    | Decision API, the 11 actions, idempotency, audit log                                                                                           |
+| `server/executor/`, `server/api/tickets/[id]/*.post.ts` (approve, reject, manual-send, snooze, unsnooze, retry, mark-done, case, undo), `server/api/tickets/approve-all.{get,post}.ts`                                                                                                                     | IRDR-457 executor    | Decision API, the 11 actions, idempotency, audit log                                                                                           |
 | `app/components/inbox/`, `app/components/ticket/`, `app/pages/anastasai/index.vue`, `app/pages/anastasai/t/[id].vue`, `server/api/tickets/index.get.ts`, `server/api/tickets/[id].get.ts`                                                                                                                  | IRDR-458 UI          | Inbox, ticket detail, decision bar, keyboard flow, Realtime                                                                                    |
 | `server/autonomy/`, `server/notify/`, `server/learning/`, `server/api/autonomy/`, `server/api/activity/`, `server/api/playbook.get.ts`, `server/api/learning/`, `app/components/autonomy/`, `app/components/activity/`, `app/components/playbook/`, `app/pages/anastasai/{autonomy,activity,playbook}.vue` | IRDR-459 autonomy    | Autonomy page, activity log, playbook, notifications, learning loop                                                                            |
 
@@ -358,6 +358,21 @@ scheduled after `settings.undo_window_minutes`, the ticket is `auto_pending`. `r
 returns the ticket to `needs_decision` with the proposal active. `undo` cancels the scheduled reply,
 returns the ticket to `needs_decision` and lists what already ran (also stored on the cancelled row).
 
+### Approve & send all (IRDR-481)
+
+The inbox header's 3-dot menu (or ⌘K) approves every eligible unsent reply as proposed, after a
+confirm dialog. `GET /api/tickets/approve-all` lists the candidates (the regenerable drafts, see
+`server/agent/regenerate.ts`) split into eligible and skipped with the reason. Eligibility is the
+Auto guard set without the two Auto settings (`failedGuard(ctx, { settings: false })` in
+`server/autonomy/evaluate.ts`: global pause and the case's mode don't apply to Phillip's own
+decision) plus two bulk rules: no enabled irreversible action and an enabled Send reply
+(`server/executor/approve-all.ts`). `POST /api/tickets/approve-all` takes the tickets and proposal
+versions the dialog showed, recomputes eligibility and calls `executor.approve(id, { proposalVersion,
+actions: [] }, 'you')` one ticket after the other, so a ticket that is no longer eligible or whose
+draft was regenerated since is skipped, and the decision and audit rows are the same as a single
+approval without edits. A thrown approval or a failed/held action counts as failed (the ticket goes to
+`action_failed` as usual); the rest go on.
+
 ### Tests
 
 ```bash
@@ -521,7 +536,7 @@ never runs it. `unclear` stays what it was: the case itself is uncertain.
 | Linear              | `tools/linear.ts`, `@linear/sdk` issue search in the team                                                                                                                                                                           | `LINEAR_API_KEY`                                                  |
 | Notion              | `tools/notion.ts`, `@notionhq/client`                                                                                                                                                                                               | `NOTION_TOKEN`                                                    |
 | Email history       | the store (`getPreviousTickets`) over Maelle's own tables                                                                                                                                                                           | none                                                              |
-| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-sonnet-5-5`, `AGENT.effort` high), consistency check `MODELS.small` (`claude-sonnet-5-5`, low effort)                                       | `ANTHROPIC_API_KEY`                                               |
+| Claude              | `model/anthropic.ts` (`messages.stream(...).finalMessage()`), `MODELS.agent` (`claude-sonnet-5-5`, `AGENT.effort` high), consistency check `MODELS.small` (`claude-sonnet-5-5`, low effort)                                         | `ANTHROPIC_API_KEY`                                               |
 
 Every adapter is constructed only when its variable is set; otherwise the source is `skipped`.
 Tests, evals and the dev server use the fakes in the same files (`createFake*`), wired by

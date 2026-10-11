@@ -4,6 +4,9 @@
  * check IRDR-456, learning IRDR-459.
  */
 import type {
+  ApproveAllPreviewResponse,
+  ApproveAllRequest,
+  ApproveAllResponse,
   ApproveRequest,
   ApproveResponse,
   ConsistencyCheckRequest,
@@ -132,6 +135,16 @@ export function useTicket(id: Ref<string> | string) {
 /** Queues a new agent run for every unsent reply draft (inbox 3-dot menu). */
 export function regenerateDrafts() {
   return $fetch<RegenerateDraftsResponse>('/api/tickets/regenerate-drafts', { method: 'POST' })
+}
+
+/** What "Approve & send all" would send (inbox 3-dot menu, IRDR-481). Reads only. */
+export function previewApproveAll() {
+  return $fetch<ApproveAllPreviewResponse>('/api/tickets/approve-all')
+}
+
+/** Approves and sends, as proposed, the tickets the dialog showed (still eligible, same version). */
+export function approveAll(body: ApproveAllRequest) {
+  return $fetch<ApproveAllResponse>('/api/tickets/approve-all', { method: 'POST', body })
 }
 
 /** The decision, agent and learning endpoints for one ticket. Errors are FetchErrors (see classifyActionError). */
