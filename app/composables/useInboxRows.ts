@@ -3,7 +3,15 @@
  * (no Nuxt APIs) so they are unit tested and shared by the inbox table, the 320px list and the
  * parked rows. Sorting: safety, then high risk, then age (oldest first).
  */
-import type { AgentRunRow, DecisionKind, TicketListItem, TicketListResponse } from '#shared/api'
+import type {
+  AgentRunRow,
+  ApproveAllResponse,
+  ApproveAllSkipped,
+  ApproveAllTicket,
+  DecisionKind,
+  TicketListItem,
+  TicketListResponse,
+} from '#shared/api'
 import { CASE_TYPES, caseLabel, caseShortLabel } from '#shared/case-types'
 import { isOpenStatus, RESOLUTION_LABELS, type TicketResolution } from '#shared/status'
 import type { PillStatus } from '~/components/ui/StatusPill.vue'
@@ -31,6 +39,61 @@ export function regenerableDrafts(items: readonly InboxItem[]): InboxItem[] {
   return items.filter(
     (i) => i.status === 'needs_decision' && i.proposalLine !== null && !i.handoffReason,
   )
+}
+
+/**
+ * Unsent drafts "Approve & send all" may send (IRDR-481): the regenerable ones that are not high
+ * risk or safety. The count in the menu; the server decides the final set in the dialog.
+ */
+export function approvableDrafts(items: readonly InboxItem[]): InboxItem[] {
+  return regenerableDrafts(items).filter((i) => i.riskLevel === 'none')
+}
+
+/** Dialog rows: how many replies per case type, the largest first. */
+export function approveAllBreakdown(
+  eligible: readonly ApproveAllTicket[],
+): { label: string; value: string }[] {
+  const counts = new Map<string, number>()
+  for (const t of eligible) {
+    const label = caseLabel(t.caseType)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  return [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([label, n]) => ({ label, value: String(n) }))
+}
+
+/** Dialog rows for the skipped tickets: "#4823" and why. */
+export function approveAllSkippedRows(
+  skipped: readonly ApproveAllSkipped[],
+): { label: string; value: string }[] {
+  return [...skipped]
+    .sort((a, b) => (a.displayNumber ?? 0) - (b.displayNumber ?? 0))
+    .map((s) => ({
+      label: s.displayNumber != null ? `#${s.displayNumber}` : 'Ticket',
+      value: s.detail,
+    }))
+}
+
+/** The toast after "Approve & send all": an error toast as soon as one approval failed. */
+export function approveAllToast(res: ApproveAllResponse): {
+  tone: 'info' | 'error'
+  title: string
+  description: string
+} {
+  const sent = res.sent.length
+  const parts: string[] = []
+  if (res.skipped.length > 0) parts.push(`${res.skipped.length} skipped`)
+  if (res.failed.length > 0) {
+    parts.push(
+      `${res.failed.length} failed: ${res.failed.map((f) => `#${f.displayNumber}`).join(', ')}`,
+    )
+  }
+  return {
+    tone: res.failed.length > 0 ? 'error' : 'info',
+    title: sent > 0 ? `Sent ${plural(sent, 'reply', 'replies')}` : 'Nothing was sent',
+    description: parts.length > 0 ? parts.join(' · ') : 'Every reply went out as proposed.',
+  }
 }
 
 /** Age of a ticket: since it was opened (the oldest waits first, whatever happened in between). */

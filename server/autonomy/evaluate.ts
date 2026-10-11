@@ -21,6 +21,8 @@ export interface EvaluateTicket {
 }
 
 export interface EvaluateProposal {
+  /** The active proposal's version (the bulk approval pins it). */
+  version?: number
   caseType: CaseType
   riskLevel: RiskLevel
   policyWarnings: string[]
@@ -78,8 +80,16 @@ export function isLocked(type: ActionType, locks: Partial<Record<ActionType, boo
   return locks[type] ?? ACTIONS[type].lockedByDefault
 }
 
-/** The guards, in order. Pure, so the rules are unit-tested without a database. */
-export function decide(ctx: EvaluateContext): EvaluateResult {
+/**
+ * The guards, in order; the first one that fails, or null when all pass. Pure, so the rules are
+ * unit-tested without a database. `settings: false` leaves out the two Auto settings (global pause
+ * and the case's mode): the bulk "Approve & send all" (IRDR-481) is Phillip's own decision, so only
+ * the ticket and proposal guards apply there.
+ */
+export function failedGuard(
+  ctx: EvaluateContext,
+  opts: { settings: boolean } = { settings: true },
+): EvaluateResult | null {
   const ask = (reason: EvaluateReason, detail: string): EvaluateResult => ({
     verdict: 'ask',
     reason,
@@ -96,8 +106,10 @@ export function decide(ctx: EvaluateContext): EvaluateResult {
   const caseType = p.caseType ?? t.caseType
   if (!caseType || caseType === 'unclear') return ask('unclear', 'The case is unclear')
   if (p.handoffReason) return ask('handoff', 'No instruction fits, handed to you')
-  if (ctx.globalPause) return ask('paused', 'Automation is paused')
-  if (ctx.mode !== 'auto') return ask('always_ask', `${caseType} is on Always ask`)
+  if (opts.settings) {
+    if (ctx.globalPause) return ask('paused', 'Automation is paused')
+    if (ctx.mode !== 'auto') return ask('always_ask', `${caseType} is on Always ask`)
+  }
   if (p.policyWarnings.length > 0) {
     return ask('policy_warnings', `${p.policyWarnings.length} policy warning(s)`)
   }
@@ -110,7 +122,12 @@ export function decide(ctx: EvaluateContext): EvaluateResult {
   if (locked.length > 0) {
     return ask('locked_action', `Locked for Auto: ${locked.map((a) => a.type).join(', ')}`)
   }
-  return { verdict: 'auto', reason: 'auto', detail: 'Every guard passed' }
+  return null
+}
+
+/** The Auto verdict: every guard, including global pause and the case's mode. */
+export function decide(ctx: EvaluateContext): EvaluateResult {
+  return failedGuard(ctx) ?? { verdict: 'auto', reason: 'auto', detail: 'Every guard passed' }
 }
 
 export interface AutonomyServiceDeps {

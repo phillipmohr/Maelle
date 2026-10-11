@@ -50,6 +50,7 @@ export async function loadEvaluateContextFromDb(ticketId: string): Promise<Evalu
       [p.id],
     )
     proposal = {
+      version: Number(p.version),
       caseType: (isCaseType(p.case_type) ? p.case_type : 'unclear') as CaseType,
       riskLevel: (p.risk_level as RiskLevel) ?? 'none',
       policyWarnings: (p.policy_warnings as string[] | null) ?? [],
