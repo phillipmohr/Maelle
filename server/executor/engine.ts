@@ -29,6 +29,7 @@ export interface EngineDeps {
   mail: () => MailService
   now: () => Date
   log: (msg: string) => void
+  servicePausedSince?: string | null
 }
 
 export interface RunInput {
@@ -86,6 +87,7 @@ export async function runExecutions(deps: EngineDeps, input: RunInput): Promise<
     customerConfirmed: input.customerConfirmed,
     replyDraft: input.replyDraft ?? replyDraftOf(row) ?? input.proposal?.replyDraft ?? null,
     scheduleReplyFor: input.scheduleReplyFor,
+    servicePausedSince: deps.servicePausedSince ?? null,
   })
 
   async function runOne(row: ExecutionRecord): Promise<ExecutionRecord> {

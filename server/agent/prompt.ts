@@ -10,6 +10,7 @@ import {
   UNCLEAR_CONFIDENCE_THRESHOLD,
   type CaseType,
 } from '#shared/case-types'
+import { SERVICE_PAUSE } from '#shared/config'
 import type { AgentTrigger } from '#shared/services'
 import { z } from 'zod'
 import type { CustomerFacts } from './context'
@@ -37,7 +38,10 @@ const PARAM_NOTES: Record<ActionType, string> = {
   send_reply: 'to (required, the customer email), cc [], includeAttachments (default true)',
 }
 
-function actionCatalogue(): string {
+const PAUSED_REFUND_PARAMS =
+  'stripePaymentIntentId or stripeChargeId (one required: the prePausePayment or a postPauseCharges entry from the customer facts, never an older payment), amountCents (required, from the facts: proratedAmountCents, remainingRefundableCents or the full amount, never your own arithmetic), currency, paymentAmountCents, paymentDate (ISO date), cardLabel ("Visa ··2291"), reason requested_by_customer|duplicate|fraudulent'
+
+function actionCatalogue(paused: boolean): string {
   return ACTION_LIST.map((a) => {
     const shape = z.toJSONSchema(ACTION_PARAM_SCHEMAS[a.key], {
       io: 'input',
@@ -46,7 +50,9 @@ function actionCatalogue(): string {
       required?: string[]
     }
     const required = shape.required?.length ? ` Required: ${shape.required.join(', ')}.` : ''
-    return `- \`${a.key}\` (${a.label}, ${a.irreversible ? 'IRREVERSIBLE' : 'reversible'}, writes to ${a.target}): ${a.description} Params: ${PARAM_NOTES[a.key]}.${required}`
+    const notes =
+      paused && a.key === 'refund_latest_payment' ? PAUSED_REFUND_PARAMS : PARAM_NOTES[a.key]
+    return `- \`${a.key}\` (${a.label}, ${a.irreversible ? 'IRREVERSIBLE' : 'reversible'}, writes to ${a.target}): ${a.description} Params: ${notes}.${required}`
   }).join('\n')
 }
 
@@ -59,7 +65,9 @@ function templateCatalogue(knowledge: Knowledge): string {
     lines.push(
       `### \`${key}\` · ${def.label}`,
       `Trigger: ${t?.trigger ?? def.trigger}`,
-      `Template actions: ${(t?.actions ?? []).join(', ') || '(none)'} → registry: ${def.defaultActions.join(', ') || '(none)'}`,
+      t
+        ? `Template actions (Notion, these win): ${t.actions.join(', ') || '(none: reply only)'}`
+        : `No Notion template: registry default actions ${def.defaultActions.join(', ') || '(none)'}`,
       `Requires customer confirmation: ${(t?.requiresConfirmation ?? def.requiresConfirmation) ? 'yes (two-stage)' : 'no'} · default risk: ${def.defaultRisk} · research: ${def.research.join(', ') || 'none'}`,
       `Notion page id: ${t?.notionPageId ?? def.notionPageId ?? 'n/a'}`,
       t?.reply
@@ -105,9 +113,14 @@ function examplesSection(knowledge: Knowledge): string {
     .join('\n')
 }
 
-export function buildSystemPrompt(knowledge: Knowledge, opts: { supportMailbox: string }): string {
+export function buildSystemPrompt(
+  knowledge: Knowledge,
+  opts: { supportMailbox: string; servicePaused?: boolean },
+): string {
   // The Knowledge Base is switched off while it is empty (KNOWLEDGE_BASE.enabled, IRDR-477).
   const kb = knowledge.knowledgeBaseEnabled
+  // InstaRadar is paused (SERVICE_PAUSE, IRDR-482): these rules follow the Notion page's paused state.
+  const paused = opts.servicePaused ?? SERVICE_PAUSE.active
   return `# AnastasAI
 
 You are AnastasAI, the research and drafting agent behind Anastasia, the customer support persona of InstaRadar (an app that tracks public Instagram profiles: followers, following, posts, stories). Every email to ${opts.supportMailbox} becomes a ticket. For each ticket you research read-only and prepare ONE decision for Phillip, the founder: the case, 3 to 5 research findings with sources, the actions to run (from a fixed registry) and the reply draft. You execute nothing. Phillip approves with one key, then deterministic code runs the actions. Everything you submit is validated by code against the schema and the rules below; a human reads it before anything happens.
@@ -115,7 +128,7 @@ You are AnastasAI, the research and drafting agent behind Anastasia, the custome
 ## How a run works
 
 1. The user message contains the ticket, the full email thread, a research bundle that code already fetched from Stripe, the InstaRadar database, the Vercel logs, Linear and the email history, plus derived customer facts and hints. Trust the bundle: it is the ground truth about this customer. Never invent ids, amounts, dates or profiles.
-2. Decide first whether any research is needed; usually it is not. Routine cases go straight to \`submit_proposal\` without a single tool call: cancellations, cancellation reason asks, product and billing questions the facts${kb ? ', the templates and the knowledge base' : ' and the templates'} already answer, follow-ups, release notices, unsatisfied customers, feature requests. Call research tools only for: chargebacks and bank disputes (the exact Stripe event timeline), bug reports, outages and data accuracy questions (a log search, a Linear search), a source the bundle marks \`failed\` or \`skipped\` that this case needs, or one specific id, amount or page text that an action or the reply needs. Make every needed call in one turn (they run in parallel), then submit; never research one thing after another. Tools are read-only. If a tool fails, note it in researchWarnings and continue; a missing source never blocks the proposal.
+2. Decide first whether any research is needed; usually it is not. Routine cases go straight to \`submit_proposal\` without a single tool call: cancellations, cancellation reason asks, product and billing questions the facts${kb ? ', the templates and the knowledge base' : ' and the templates'} already answer, follow-ups, release notices, unsatisfied customers, feature requests${paused ? ', and while InstaRadar is paused also bug reports, outages and data accuracy questions (they are explained by the pause, never investigated)' : ''}. Call research tools only for: chargebacks and bank disputes (the exact Stripe event timeline),${paused ? '' : ' bug reports, outages and data accuracy questions (a log search, a Linear search),'} a source the bundle marks \`failed\` or \`skipped\` that this case needs, or one specific id, amount or page text that an action or the reply needs. Make every needed call in one turn (they run in parallel), then submit; never research one thing after another. Tools are read-only. If a tool fails, note it in researchWarnings and continue; a missing source never blocks the proposal.
 3. Finish with exactly one \`submit_proposal\` call containing the complete proposal. If the input is rejected you get the issues back; fix them and call \`submit_proposal\` again with the whole proposal. Do not answer in plain text; the proposal is the only output that counts.
 
 ## Cases (the Notion Templates DB is the source of truth)
@@ -126,15 +139,19 @@ ${templateCatalogue(knowledge)}
 
 ## Actions (the registry; these 11 are the only actions that exist)
 
-${actionCatalogue()}
+${actionCatalogue(paused)}
 
 Action rules:
 - Only registry actions, in registry order (the order above), \`send_reply\` always last and at most once. Every action carries \`params\` exactly as specified and a one-line \`reason\` that starts with "Because: ".
 - Use ids from the research bundle (Stripe subscription/payment ids, InstaRadar user id, Linear identifiers). If an id is not in the bundle and no tool returns it, leave optional params out and mention the gap in the research.
 - \`requiredForReply: true\` when the reply depends on the action: a reply that promises a release notice needs \`store_release_notification_email\`; a reply that says "I've refunded" needs the refund; "I've cancelled" needs the cancellation. A failure of a required action then holds the reply.
 - Two-stage cases (templates with "Requires confirmation": refunds, deletions): when the thread has no explicit confirmation from the customer yet, stage 1 = \`send_reply\` now and the irreversible actions with \`stage: "after_confirmation"\`, \`customerConfirmationNeeded: true\`. When this run was triggered by a customer reply that confirms ("Yes, refund"), propose stage 2: the queued actions with \`stage: "now"\` plus a short confirmation reply, \`customerConfirmationNeeded: false\`. When the customer changed their mind, propose that instead (no irreversible action, a kind reply).
-- A cancellation request without the word refund means cancel at period end, never immediately. A refund means immediate cancellation and loss of data, so it always needs the confirmation stage. Only the latest payment is refundable. A second refund needs a reason. Account deletion only after cancellation and explicit confirmation.
-- Bug reports and feature requests: search Linear first. When an open issue exists, propose \`create_linear_ticket\` with \`existingIssueIdentifier\` so it gets linked, not duplicated, and \`store_release_notification_email\` with \`linearIssueIdentifier\`. When no issue exists, propose \`create_linear_ticket\` (new) and \`store_release_notification_email\` with \`fromActionPosition\` pointing at it.
+${
+  paused
+    ? `- InstaRadar is paused: the Notion protocol's Rules decide refunds and cancellations. A cancellation without a refund request is \`cancel_at_period_end\`, never immediately, even when the customer asks to cancel immediately; no confirmation, no refund. Immediate cancellation only together with a refund, after the customer's confirmation (not needed when the subscription is already cancelled). Refunds target only the prePausePayment or a postPauseCharges entry from the customer facts and use the amounts given there; no reason is needed for the remainder refund of the same payment. Never propose \`delete_account\`, \`create_coupon\`, \`create_linear_ticket\` or \`store_release_notification_email\`.`
+    : `- A cancellation request without the word refund means cancel at period end, never immediately. A refund means immediate cancellation and loss of data, so it always needs the confirmation stage. Only the latest payment is refundable. A second refund needs a reason. Account deletion only after cancellation and explicit confirmation.
+- Bug reports and feature requests: search Linear first. When an open issue exists, propose \`create_linear_ticket\` with \`existingIssueIdentifier\` so it gets linked, not duplicated, and \`store_release_notification_email\` with \`linearIssueIdentifier\`. When no issue exists, propose \`create_linear_ticket\` (new) and \`store_release_notification_email\` with \`fromActionPosition\` pointing at it.`
+}
 - Safety / removal requests: \`remove_from_tracking\` with the handle from the message, risk level safety, no research delay, no questions back.
 - Chargebacks / bank disputes: reply only (no refund unless clearly warranted), factual, never submissive, with the Stripe timeline; code attaches the timeline image. Extract the bank's deadline as risk.dueDate.
 
@@ -145,12 +162,12 @@ Action rules:
 ## Risk
 
 - \`safety\` for every Safety / removal request (always on top).
-- \`high\` for chargebacks and bank disputes, legal threats, open disputes, and long-term customers (tag "Long-term") with an issue.
+- \`high\` for chargebacks and bank disputes, legal threats, open disputes${paused ? ', and every other case the Notion Rules mark as high risk' : ', and long-term customers (tag "Long-term") with an issue'}.
 - Otherwise \`none\`. \`dueDate\` (ISO date) when a deadline is stated, e.g. a bank asking for documentation within 10 days.
 
 ## Reply draft
 
-Follow the protocol below (Persona & Tone, Writing Principles, Rules) and the case template, filled with the concrete facts: amounts, dates, plan, profiles, names. Always English. New conversations start with "Hi, thanks for reaching out!" (or the template's own opening); replies inside a thread do not repeat the greeting. Never an em dash (the character —); use a comma, a colon or a new sentence. Do not add a closing line or a signature: Maelle appends Anastasia's signature (name, Customer Care · InstaRadar, contact details) when the mail is sent, so the body ends with its last sentence. Keep it to two to four short paragraphs. Subject: "Re: <the customer's subject>". The reply must not promise anything that is not in the actions (no "I've refunded" without a refund action, no "I'll let you know when it's live" without the release notification action). In stage 1 of a two-stage case, describe what happens (immediate cancellation, data deleted) and ask for a plain confirmation.
+Follow the protocol below (Persona & Tone, Writing Principles, Rules) and the case template, filled with the concrete facts: amounts, dates, plan, profiles, names. Always English. New conversations start with "Hi, thanks for reaching out!" (or the template's own opening); replies inside a thread do not repeat the greeting. Never an em dash (the character —); use a comma, a colon or a new sentence. Do not add a closing line or a signature: Maelle appends Anastasia's signature (name, Customer Care · InstaRadar, contact details) when the mail is sent, so the body ends with its last sentence. Keep it to two to four short paragraphs. Subject: "Re: <the customer's subject>". The reply must not promise anything that is not in the actions (no "I've refunded" without a refund action, no "I'll let you know when it's live" without the release notification action). In stage 1 of a two-stage case, describe what happens (${paused ? 'immediate cancellation; even though InstaRadar is down, the saved data will be deleted, and the customer can get it back if InstaRadar comes back' : 'immediate cancellation, data deleted'}) and ask for a plain confirmation.
 
 ## Translations
 
@@ -217,6 +234,8 @@ export interface UserMessageInput {
   } | null
   followUp: { waitingSince: string | null; daysWaiting: number | null } | null
   now: Date
+  /** Defaults to SERVICE_PAUSE.active. */
+  servicePaused?: boolean
 }
 
 const excerpt = (s: string | null | undefined, max: number) =>
@@ -337,9 +356,39 @@ function factsSection(f: CustomerFacts, now: Date): string {
     logErrors: f.logErrors,
     previousTickets: f.previousTickets,
     tags: f.tags,
+    ...(f.prePausePayment || f.postPauseCharges.length
+      ? { prePausePayment: f.prePausePayment, postPauseCharges: f.postPauseCharges }
+      : {}),
     today: now.toISOString().slice(0, 10),
   }
   return compact(view)
+}
+
+const amount = (cents: number, currency: string) =>
+  `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`
+
+/** The refund hints while InstaRadar is paused: the numbers code computed, never the model. */
+function pausedRefundHints(f: CustomerFacts): string[] {
+  const hints: string[] = []
+  const pre = f.prePausePayment
+  if (pre) {
+    const period =
+      pre.periodStart && pre.periodEnd
+        ? `paid period ${pre.periodStart.slice(0, 10)} to ${pre.periodEnd.slice(0, 10)}${pre.periodSource === 'plan' ? ' (estimated from the plan interval)' : ''}`
+        : 'paid period unknown'
+    const prorated =
+      pre.proratedAmountCents == null
+        ? 'no prorated amount (period unknown: propose no refund amount and say so in the findings)'
+        : `prorated (unused ${pre.unusedDays} of ${pre.periodDays} days since ${SERVICE_PAUSE.since.slice(0, 10)}): ${amount(pre.proratedAmountCents, pre.currency)}`
+    hints.push(
+      `Refundable payment from before the pause: ${pre.paymentIntentId ?? pre.chargeId} · ${amount(pre.amountCents, pre.currency)} on ${pre.date.slice(0, 10)} · ${period} · already refunded ${amount(pre.refundedCents, pre.currency)} · remaining ${amount(pre.remainingRefundableCents, pre.currency)} · ${prorated}. Use these amounts as given and put the calculation into the action's reason.`,
+    )
+  } else hints.push('No successful payment from before the pause found in Stripe.')
+  for (const c of f.postPauseCharges)
+    hints.push(
+      `Charge on or after the pause: ${c.paymentIntentId ?? c.chargeId} · ${amount(c.amountCents, c.currency)} on ${c.date.slice(0, 10)} · ${c.remainingRefundableCents === 0 ? `refunded in full${c.refundedAt ? ` on ${c.refundedAt.slice(0, 10)}` : ''}` : `remaining refundable ${amount(c.remainingRefundableCents, c.currency)}`}.`,
+    )
+  return hints
 }
 
 export function buildUserMessage(input: UserMessageInput): string {
@@ -361,27 +410,42 @@ export function buildUserMessage(input: UserMessageInput): string {
     hints.push(
       'Change of mind detected by code: the latest customer message reads as a NO / not anymore. Do not propose the irreversible actions; reply kindly.',
     )
+  else if ((input.servicePaused ?? SERVICE_PAUSE.active) && trigger === 'customer_reply')
+    hints.push(
+      'No explicit yes found by code. Judge the latest customer message yourself: when it agrees to what we offered or asks for the full refund after our partial offer (Notion: that counts as their confirmation), propose stage 2 (customerConfirmationNeeded: false); otherwise stay in stage 1.',
+    )
   else
     hints.push(
       'No explicit customer confirmation in the thread. Two-stage cases stay in stage 1 (customerConfirmationNeeded: true).',
     )
-  if (facts.latestPayment)
+  const paused = input.servicePaused ?? SERVICE_PAUSE.active
+  if (paused && !facts.activeSubscription && facts.latestSubscription)
     hints.push(
-      `Latest successful payment: ${facts.latestPayment.paymentIntentId ?? facts.latestPayment.chargeId} · ${(facts.latestPayment.amountCents / 100).toFixed(2)} ${facts.latestPayment.currency.toUpperCase()} on ${facts.latestPayment.date.slice(0, 10)} (${facts.daysSinceLatestPayment} days ago${facts.daysSinceLatestPayment != null && facts.daysSinceLatestPayment > 30 ? ', OUTSIDE the 30-day window' : ', inside the 30-day window'}).`,
+      'The subscription is already cancelled: a refund needs no confirmation stage and no cancellation (Notion), propose it now.',
     )
-  else hints.push('No successful payment found in Stripe for this email.')
-  if (facts.refundCount > 0)
-    hints.push(
-      `This customer already received ${facts.refundCount} refund(s): a second refund needs a valid reason (protocol).`,
-    )
+  if (paused) {
+    hints.push(...pausedRefundHints(facts))
+  } else {
+    if (facts.latestPayment)
+      hints.push(
+        `Latest successful payment: ${facts.latestPayment.paymentIntentId ?? facts.latestPayment.chargeId} · ${(facts.latestPayment.amountCents / 100).toFixed(2)} ${facts.latestPayment.currency.toUpperCase()} on ${facts.latestPayment.date.slice(0, 10)} (${facts.daysSinceLatestPayment} days ago${facts.daysSinceLatestPayment != null && facts.daysSinceLatestPayment > 30 ? ', OUTSIDE the 30-day window' : ', inside the 30-day window'}).`,
+      )
+    else hints.push('No successful payment found in Stripe for this email.')
+    if (facts.refundCount > 0)
+      hints.push(
+        `This customer already received ${facts.refundCount} refund(s): a second refund needs a valid reason (protocol).`,
+      )
+  }
   if (facts.isLongTerm)
     hints.push(
-      'Long-term customer (tag Long-term): an issue is high risk; act fast, consider a goodwill gesture.',
+      paused
+        ? 'Long-term customer (tag Long-term): they react most strongly to the pause; act fast and be especially clear.'
+        : 'Long-term customer (tag Long-term): an issue is high risk; act fast, consider a goodwill gesture.',
     )
   if (facts.isNewCustomer) hints.push('New customer (less than 30 days).')
   if (facts.trackedProfiles.length)
     hints.push(
-      `Tracked profiles (${facts.trackedProfiles.length}): ${facts.trackedProfiles.map((p) => `@${p.handle}`).join(', ')}. Immediate cancellation deletes them.`,
+      `Tracked profiles (${facts.trackedProfiles.length}): ${facts.trackedProfiles.map((p) => `@${p.handle}`).join(', ')}. ${paused ? 'A refund cancels immediately: even though InstaRadar is down, their saved tracking activity will be deleted, and they can get it back if InstaRadar comes back.' : 'Immediate cancellation deletes them.'}`,
     )
   if (input.researchWarnings.length)
     hints.push(`Research warnings from code (include them): ${input.researchWarnings.join(' · ')}`)

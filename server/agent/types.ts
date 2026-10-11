@@ -60,6 +60,9 @@ export interface StripeInvoiceSummary {
   nextPaymentAttempt: string | null
   subscriptionId: string | null
   billingReason: string | null
+  /** The paid period of the subscription line item (not the invoice's own usage period). */
+  periodStart?: string | null
+  periodEnd?: string | null
 }
 
 export interface StripeChargeSummary {

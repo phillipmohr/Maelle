@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { isActionType, sortByActionOrder } from '#shared/actions'
 import type { MessageRow, TicketRow } from '#shared/api'
 import { CASE_TYPES, isCaseType, type CaseType } from '#shared/case-types'
+import { SERVICE_PAUSE } from '#shared/config'
 import {
   ProposalSchema,
   RiskSchema,
@@ -58,6 +59,8 @@ export interface FinalizeContext {
   caseOverride: CaseType | null
   attachments: AttachmentStore
   now: Date
+  /** InstaRadar is paused; defaults to SERVICE_PAUSE.active (evals pin it). */
+  servicePaused?: boolean
 }
 
 export type FinalizeResult =
@@ -84,7 +87,17 @@ export function customerTexts(messages: MessageRow[]): {
   }
 }
 
-export function policyContextFor(ctx: FinalizeContext, caseType: CaseType): PolicyContext {
+/** "Requires confirmation" of a case: the Notion template wins, the code registry is the fallback. */
+export function caseRequiresConfirmation(caseType: CaseType, knowledge: Knowledge): boolean {
+  const template = knowledge.templates.find((t) => t.caseType === caseType)
+  return template ? template.requiresConfirmation : CASE_TYPES[caseType].requiresConfirmation
+}
+
+export function policyContextFor(
+  ctx: FinalizeContext,
+  caseType: CaseType,
+  confirmation: ConfirmationSignal = ctx.confirmation,
+): PolicyContext {
   const texts = customerTexts(ctx.messages)
   return {
     caseType,
@@ -93,7 +106,9 @@ export function policyContextFor(ctx: FinalizeContext, caseType: CaseType): Poli
     latestCustomerText: texts.latest,
     receivedAt: texts.receivedAt,
     now: ctx.now,
-    confirmation: ctx.confirmation,
+    confirmation,
+    servicePaused: ctx.servicePaused ?? SERVICE_PAUSE.active,
+    requiresConfirmation: caseRequiresConfirmation(caseType, ctx.knowledge),
   }
 }
 
@@ -137,23 +152,37 @@ export async function finalizeSubmission(
       `case: the user chose "${ctx.caseOverride}" for this ticket (case_override run); the proposal must use exactly this case.`,
     )
 
+  let confirmation = ctx.confirmation
   if (isCaseType(caseKey)) {
     const def = CASE_TYPES[caseKey]
+    const requires = caseRequiresConfirmation(caseKey, ctx.knowledge)
+    // While paused (Notion): a customer whose subscription is already cancelled is refunded without
+    // a confirmation, and an answer the regex cannot read ("I want the full amount") counts as a yes
+    // when the model proposes stage 2 on the customer's reply.
+    if ((ctx.servicePaused ?? SERVICE_PAUSE.active) && requires && confirmation === 'none') {
+      if (!ctx.facts.activeSubscription && ctx.facts.latestSubscription) confirmation = 'confirmed'
+      else if (
+        ctx.trigger === 'customer_reply' &&
+        rest.stage === 2 &&
+        rest.customerConfirmationNeeded === false
+      )
+        confirmation = 'confirmed'
+    }
     // Two-stage enforcement: code decides whether the customer still has to confirm.
-    const needed = def.requiresConfirmation && ctx.confirmation !== 'confirmed'
+    const needed = requires && confirmation !== 'confirmed'
     if (rest.customerConfirmationNeeded !== needed) {
       rest.customerConfirmationNeeded = needed
       notes.push(
         needed
           ? `customerConfirmationNeeded set to true by policy: "${def.label}" requires the customer's confirmation and the thread has no explicit confirmation yet, so irreversible actions must use stage "after_confirmation" and the proposal stays in stage 1.`
-          : `customerConfirmationNeeded set to false by policy (${def.requiresConfirmation ? 'the customer confirmed in the thread' : 'this case needs no confirmation'}).`,
+          : `customerConfirmationNeeded set to false by policy (${requires ? 'the customer confirmed in the thread' : 'this case needs no confirmation'}).`,
       )
     }
     if (needed && rest.stage !== 1) {
       rest.stage = 1
       notes.push('stage set to 1 by policy (confirmation pending).')
     }
-    if (!def.requiresConfirmation && rest.stage === 2) {
+    if (!requires && rest.stage === 2) {
       rest.stage = 1
       notes.push('stage set to 1 by policy (single-stage case).')
     }
@@ -213,7 +242,7 @@ export async function finalizeSubmission(
   if (isCaseType(caseKey)) {
     const riskParsed = RiskSchema.safeParse(rest.risk ?? { level: 'none' })
     if (riskParsed.success) {
-      const r = applyRiskPolicy(riskParsed.data, policyContextFor(ctx, caseKey))
+      const r = applyRiskPolicy(riskParsed.data, policyContextFor(ctx, caseKey, confirmation))
       rest.risk = r.risk
       notes.push(...r.notes)
     }
@@ -257,7 +286,7 @@ export async function finalizeSubmission(
   proposal.metaLine ??= proposal.handoff ? 'Hand-off · nothing drafted' : proposalMetaLine(proposal)
 
   // Policy warnings in code.
-  const pw = policyWarnings(proposal, policyContextFor(ctx, proposal.case))
+  const pw = policyWarnings(proposal, policyContextFor(ctx, proposal.case, confirmation))
   proposal.policyWarnings = unique([...proposal.policyWarnings, ...pw]).map((w) => w.slice(0, 300))
 
   // Chargeback evidence: the Stripe timeline as an attachment of the reply draft.

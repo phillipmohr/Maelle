@@ -112,6 +112,8 @@ export interface StripeWriteClient {
     id: string,
     params: {
       cancelAtPeriodEnd?: boolean
+      /** Unix seconds: end the subscription at this time (fallback for paused subscriptions). */
+      cancelAt?: number
       cancellationDetails?: CancellationDetailsInput
       /** Adds a coupon to the subscription's discounts. */
       couponId?: string
@@ -140,6 +142,8 @@ export interface StripeWriteClient {
     opts: RequestOpts,
   ): Promise<StripeRefund>
   listOpenInvoices(params: { customer: string; subscription?: string }): Promise<StripeInvoice[]>
+  /** End of the paid period of the subscription's latest paid invoice (line item), unix seconds. */
+  latestPaidPeriodEnd(subscriptionId: string): Promise<number | null>
   retrieveInvoice(id: string): Promise<StripeInvoice>
   markInvoiceUncollectible(id: string, opts: RequestOpts): Promise<StripeInvoice>
   updateInvoice(
@@ -279,6 +283,7 @@ export function createStripeWriteClient(apiKey: string): StripeWriteClient {
         const update: Stripe.SubscriptionUpdateParams = {}
         if (params.cancelAtPeriodEnd !== undefined)
           update.cancel_at_period_end = params.cancelAtPeriodEnd
+        if (params.cancelAt !== undefined) update.cancel_at = params.cancelAt
         if (params.cancellationDetails) update.cancellation_details = params.cancellationDetails
         if (params.metadata) update.metadata = params.metadata
         if (params.couponId) {
@@ -341,6 +346,18 @@ export function createStripeWriteClient(apiKey: string): StripeWriteClient {
           limit: 20,
         })
         return list.data.map(mapInvoice)
+      }),
+    latestPaidPeriodEnd: (subscriptionId) =>
+      call(async () => {
+        const list = await stripe.invoices.list({
+          subscription: subscriptionId,
+          status: 'paid',
+          limit: 1,
+        })
+        const ends = (list.data[0]?.lines?.data ?? [])
+          .map((l) => l.period?.end)
+          .filter((e): e is number => typeof e === 'number')
+        return ends.length ? Math.max(...ends) : null
       }),
     retrieveInvoice: (id) => call(async () => mapInvoice(await stripe.invoices.retrieve(id))),
     markInvoiceUncollectible: (id, opts) =>

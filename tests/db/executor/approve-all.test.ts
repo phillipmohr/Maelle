@@ -50,14 +50,29 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
     await t?.teardown()
   })
 
-  it('previews the safe drafts and skips locked, warned and risky ones, whatever Auto says', async () => {
-    // Auto settings don't matter for Phillip's own bulk decision.
+  it('previews the drafts and skips deletions, warned and risky ones, whatever Auto says', async () => {
+    // Auto settings and locks don't matter for Phillip's own bulk decision.
     await t.q('update public.settings set global_pause = true where app_id = $1', [t.appId])
     const ok = await t.insertTicket(featureSpec('bulk-ok@example.com'))
+    const deletion = await t.insertTicket({
+      caseType: 'account_deletion',
+      actions: [
+        {
+          type: 'delete_account',
+          params: { instaradarUserId: 'u_bulk', email: 'bulk-del@example.com' },
+        },
+        { type: 'send_reply', params: { to: 'bulk-del@example.com' } },
+      ],
+      email: 'bulk-del@example.com',
+    })
     const refund = await t.insertTicket({
       caseType: 'refund_request',
+      stage: 2,
       actions: [
-        { type: 'refund_latest_payment', params: {} },
+        {
+          type: 'refund_latest_payment',
+          params: { stripePaymentIntentId: 'pi_prev', amountCents: 512, currency: 'usd' },
+        },
         { type: 'send_reply', params: { to: 'bulk-refund@example.com' } },
       ],
       email: 'bulk-refund@example.com',
@@ -76,12 +91,18 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
       customerEmail: 'bulk-ok@example.com',
       caseType: 'feature_request',
       proposalVersion: 1,
+      refund: null,
+    })
+    // The locked refund is eligible in bulk and its amount shows up for the dialog's total.
+    expect(preview.eligible.find((e) => e.ticketId === refund.ticketId)?.refund).toEqual({
+      amountCents: 512,
+      currency: 'usd',
     })
     const reasons = new Map(preview.skipped.map((s) => [s.ticketId, s.reason]))
-    expect(reasons.get(refund.ticketId)).toBe('locked_action')
+    expect(reasons.get(deletion.ticketId)).toBe('irreversible_action')
     expect(reasons.get(warned.ticketId)).toBe('policy_warnings')
     expect(reasons.get(risky.ticketId)).toBe('high_risk')
-    for (const id of [refund.ticketId, warned.ticketId, risky.ticketId])
+    for (const id of [deletion.ticketId, warned.ticketId, risky.ticketId])
       expect(preview.eligible.some((e) => e.ticketId === id)).toBe(false)
     await t.q('update public.settings set global_pause = false where app_id = $1', [t.appId])
   })
@@ -89,13 +110,16 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
   it('sends as proposed: the same decision and actions as a single approval without edits', async () => {
     const bulk = await t.insertTicket(featureSpec('bulk-same@example.com'))
     const single = await t.insertTicket(featureSpec('single-same@example.com'))
-    const refund = await t.insertTicket({
-      caseType: 'refund_request',
+    const deletion = await t.insertTicket({
+      caseType: 'account_deletion',
       actions: [
-        { type: 'refund_latest_payment', params: {} },
-        { type: 'send_reply', params: { to: 'bulk-refund2@example.com' } },
+        {
+          type: 'delete_account',
+          params: { instaradarUserId: 'u_bulk2', email: 'bulk-del2@example.com' },
+        },
+        { type: 'send_reply', params: { to: 'bulk-del2@example.com' } },
       ],
-      email: 'bulk-refund2@example.com',
+      email: 'bulk-del2@example.com',
     })
     const mailBefore = t.mail.sent.length
 
@@ -107,8 +131,8 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
     const res = await approveAll(deps, {
       tickets: [
         { ticketId: bulk.ticketId, proposalVersion: 1 },
-        // Not eligible (locked refund): requested anyway, still never approved.
-        { ticketId: refund.ticketId, proposalVersion: 1 },
+        // Not eligible (Delete account): requested anyway, still never approved.
+        { ticketId: deletion.ticketId, proposalVersion: 1 },
       ],
     })
 
@@ -116,7 +140,9 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
     expect(res.sent).toEqual([
       { ticketId: bulk.ticketId, displayNumber: bulk.displayNumber, ticketStatus: 'closed' },
     ])
-    expect(res.skipped).toMatchObject([{ ticketId: refund.ticketId, reason: 'locked_action' }])
+    expect(res.skipped).toMatchObject([
+      { ticketId: deletion.ticketId, reason: 'irreversible_action' },
+    ])
 
     const shape = async (id: string) =>
       (await t.executions(id)).map((e) => [e.action_type, e.status, e.executed_by])
@@ -127,12 +153,41 @@ describe.skipIf(!TEST_URL)('approve & send all', () => {
       ['send_reply', 'succeeded', 'you'],
     ])
     expect((await t.decisions(bulk.ticketId)).map((d) => d.decision)).toEqual(['approved'])
-    expect(await t.executions(refund.ticketId)).toEqual([])
-    expect((await t.ticket(refund.ticketId)).status).toBe('needs_decision')
+    expect(await t.executions(deletion.ticketId)).toEqual([])
+    expect((await t.ticket(deletion.ticketId)).status).toBe('needs_decision')
     expect(t.mail.sent.slice(mailBefore).map((m) => m.to)).toEqual([
       'single-same@example.com',
       'bulk-same@example.com',
     ])
+  })
+
+  it('runs a refund and an immediate cancellation in bulk, confirmed and as proposed (IRDR-482)', async () => {
+    t.fakes.stripe.seedCustomer({
+      customer: 'cus_bulk',
+      subscription: 'sub_bulk',
+      paymentIntent: 'pi_bulk',
+      charge: 'ch_bulk',
+      amount: 999,
+    })
+    const { ticketId, displayNumber } = await t.insertTicket({
+      caseType: 'refund_request',
+      stage: 2,
+      email: 'bulk-money@example.com',
+      stripeCustomerId: 'cus_bulk',
+      actions: [
+        {
+          type: 'refund_latest_payment',
+          params: { stripePaymentIntentId: 'pi_bulk', amountCents: 512, currency: 'usd' },
+        },
+        { type: 'cancel_immediately', params: { stripeSubscriptionId: 'sub_bulk' } },
+        { type: 'send_reply', params: { to: 'bulk-money@example.com' } },
+      ],
+    })
+    const res = await approveAll(deps, { tickets: [{ ticketId, proposalVersion: 1 }] })
+    expect(res.failed).toEqual([])
+    expect(res.sent).toEqual([{ ticketId, displayNumber, ticketStatus: 'closed' }])
+    expect(t.fakes.stripe.state.charges.get('ch_bulk')!.amountRefunded).toBe(512)
+    expect(t.fakes.stripe.state.subscriptions.get('sub_bulk')!.status).toBe('canceled')
   })
 
   it('skips a draft that changed after the dialog opened and sends nothing for it', async () => {

@@ -138,6 +138,8 @@ export interface ActionContext {
   replyDraft: ReplyDraft | null
   /** Auto only: the reply is scheduled instead of sent. */
   scheduleReplyFor: Date | null
+  /** Set while InstaRadar is paused (ISO timestamp of the pause); unset or null = not paused. */
+  servicePausedSince?: string | null
 }
 
 export interface ActionOutcome {
@@ -163,4 +165,9 @@ export interface ExecutorDeps {
   jobs: () => JobsService
   now: () => Date
   log: (msg: string) => void
+  /**
+   * InstaRadar is paused since (SERVICE_PAUSE, IRDR-482): refunds may target the payment from before
+   * the pause or a charge after it, also when partly refunded. Defaults to SERVICE_PAUSE; null = not paused.
+   */
+  servicePausedSince?: string | null
 }

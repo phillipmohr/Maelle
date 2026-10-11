@@ -63,6 +63,19 @@ export function approveAllBreakdown(
     .map(([label, n]) => ({ label, value: String(n) }))
 }
 
+/** "Includes 3 refunds · total 24.50 USD" (one total per currency), or null without refunds. */
+export function approveAllRefundLine(eligible: readonly ApproveAllTicket[]): string | null {
+  const refunds = eligible.filter((t) => t.refund)
+  if (refunds.length === 0) return null
+  const totals = new Map<string, number>()
+  for (const t of refunds) {
+    const c = t.refund!.currency.toUpperCase()
+    totals.set(c, (totals.get(c) ?? 0) + t.refund!.amountCents)
+  }
+  const total = [...totals].map(([c, cents]) => `${(cents / 100).toFixed(2)} ${c}`).join(' + ')
+  return `Includes ${plural(refunds.length, 'refund')} · total ${total}`
+}
+
 /** Dialog rows for the skipped tickets: "#4823" and why. */
 export function approveAllSkippedRows(
   skipped: readonly ApproveAllSkipped[],

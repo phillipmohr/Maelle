@@ -206,11 +206,10 @@ describe.skipIf(!url)('IRDR-459 autonomy schema and queries', () => {
       riskLevel: 'high',
       caseType: 'chargeback',
     })
-    // #4822 refund stage 1: even on Auto the customer must confirm first
+    // #4822 refund stage 1 on Auto: only the reply that asks the customer to confirm goes out, the
+    // locked refund waits for the stage-2 proposal (IRDR-482)
     await applyAutonomyUpdate(appId, { modes: { refund_request: 'auto' } }, 'test@maelle.local')
-    expect(decide(await loadEvaluateContextFromDb(await ticketId(4822))).reason).toBe(
-      'confirmation_pending',
-    )
+    expect(decide(await loadEvaluateContextFromDb(await ticketId(4822))).verdict).toBe('auto')
     // #4809 refund stage 2: cancel_immediately is still locked → ask
     expect(decide(await loadEvaluateContextFromDb(await ticketId(4809))).reason).toBe(
       'locked_action',

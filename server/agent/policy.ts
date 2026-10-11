@@ -9,6 +9,7 @@ import type { Proposal } from '#shared/proposal'
 import { longDate } from './context'
 import type { CustomerFacts } from './context'
 import { money } from './attachments/stripe-timeline'
+import { isPausedRefundTarget } from './paused-refund'
 import type { ConfirmationSignal } from './types'
 
 const RISK_RANK: Record<RiskLevel, number> = { none: 0, high: 1, safety: 2 }
@@ -44,6 +45,14 @@ export interface PolicyContext {
   receivedAt: string
   now: Date
   confirmation: ConfirmationSignal
+  /**
+   * InstaRadar is paused (SERVICE_PAUSE, IRDR-482): the rules from before the pause that the Notion
+   * page lifted (30-day window, one refund, partial refunds, asking for the reason, long-term
+   * customers as high risk) are not checked. Unset means not paused.
+   */
+  servicePaused?: boolean
+  /** "Requires confirmation" of the case's Notion template; falls back to the code registry. */
+  requiresConfirmation?: boolean
 }
 
 // ---------------------------------------------------------------- due dates
@@ -164,7 +173,7 @@ export function applyRiskPolicy(
     )
   if (LEGAL_THREAT_RE.test(ctx.customerText))
     raise('high', 'The customer mentions a bank dispute or legal steps.')
-  if (ctx.facts.isLongTerm && ISSUE_CASES.has(ctx.caseType))
+  if (!ctx.servicePaused && ctx.facts.isLongTerm && ISSUE_CASES.has(ctx.caseType))
     raise(
       'high',
       `Long-term customer (${ctx.facts.customerDays} days) with an issue: act fast, consider a goodwill gesture.`,
@@ -186,25 +195,38 @@ export function policyWarnings(
   const facts = ctx.facts
   const latest = facts.latestPayment
   const refund = enabled.find((a) => REFUND_ACTIONS.has(a.type))
+  const paused = ctx.servicePaused === true
 
   if (refund) {
     const params = refund.params as Record<string, unknown>
-    if (latest && facts.daysSinceLatestPayment != null && facts.daysSinceLatestPayment > 30)
+    if (
+      !paused &&
+      latest &&
+      facts.daysSinceLatestPayment != null &&
+      facts.daysSinceLatestPayment > 30
+    )
       warnings.push(
         `Refund outside the 30-day window: the latest payment (${money(latest.amountCents, latest.currency)} on ${longDate(latest.date)}) is ${facts.daysSinceLatestPayment} days old.`,
       )
     const target = (params.stripePaymentIntentId ?? params.stripeChargeId) as string | undefined
-    if (latest && target && target !== latest.chargeId && target !== latest.paymentIntentId)
+    if (
+      latest &&
+      target &&
+      target !== latest.chargeId &&
+      target !== latest.paymentIntentId &&
+      !(paused && isPausedRefundTarget(target, facts))
+    )
       warnings.push(
         `The refund targets ${target}, but the latest payment is ${latest.paymentIntentId ?? latest.chargeId} (${money(latest.amountCents, latest.currency)} on ${longDate(latest.date)}). Only the latest payment is refundable.`,
       )
-    if (facts.refundCount > 0) {
+    if (!paused && facts.refundCount > 0) {
       const last = facts.refunds[0]!
       warnings.push(
         `Second refund: this customer already received a refund (${money(last.amountCents, last.currency)} on ${longDate(last.created)}). A second refund needs a valid reason, for example a technical issue that was looked into.`,
       )
     }
     if (
+      !paused &&
       latest &&
       typeof params.amountCents === 'number' &&
       params.amountCents !== latest.amountCents
@@ -253,7 +275,7 @@ export function policyWarnings(
       'The customer asked to cancel, not for a refund: cancel at period end instead of immediately (immediate cancellation deletes the tracked profiles).',
     )
 
-  const vague = VAGUE_REASON_RE.exec(ctx.latestCustomerText)
+  const vague = paused ? null : VAGUE_REASON_RE.exec(ctx.latestCustomerText)
   if (vague) {
     const asksFirst = proposal.reply
       ? /\?/.test(proposal.reply.body) &&
@@ -273,8 +295,9 @@ export function policyWarnings(
       )
   }
 
-  const def = CASE_TYPES[proposal.case]
-  if (def.requiresConfirmation && proposal.stage === 2 && ctx.confirmation !== 'confirmed')
+  const requiresConfirmation =
+    ctx.requiresConfirmation ?? CASE_TYPES[proposal.case].requiresConfirmation
+  if (requiresConfirmation && proposal.stage === 2 && ctx.confirmation !== 'confirmed')
     warnings.push(
       'Stage 2 proposed, but no explicit customer confirmation was detected in the thread. Check the latest message before approving.',
     )

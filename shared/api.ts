@@ -314,6 +314,8 @@ export interface ApproveAllTicket {
   caseType: CaseType
   /** The active proposal's version; the POST only approves a ticket still on it. */
   proposalVersion: number
+  /** The refund that runs now with this approval, if any (the dialog shows the total). */
+  refund?: { amountCents: number; currency: string } | null
 }
 
 /** Why a ticket is left out of the bulk approval. */
