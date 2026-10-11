@@ -6,6 +6,7 @@ import { caseLabel } from '../../shared/case-types'
 import {
   approvableDrafts,
   approveAllBreakdown,
+  approveAllRefundLine,
   approveAllSkippedRows,
   approveAllToast,
   caseText,
@@ -61,6 +62,32 @@ describe('approve & send all (IRDR-481)', () => {
       { label: caseLabel('cancellation_only'), value: '2' },
       { label: caseLabel('feature_request'), value: '1' },
     ])
+  })
+
+  it('sums the refunds per currency for the dialog line (IRDR-482)', () => {
+    const t = (n: number, refund: ApproveAllTicket['refund']): ApproveAllTicket => ({
+      ticketId: String(n),
+      displayNumber: n,
+      customerName: null,
+      customerEmail: 'a@b.c',
+      caseType: 'refund_request',
+      proposalVersion: 1,
+      refund,
+    })
+    expect(approveAllRefundLine([t(1, null)])).toBeNull()
+    expect(
+      approveAllRefundLine([
+        t(1, { amountCents: 512, currency: 'usd' }),
+        t(2, { amountCents: 999, currency: 'usd' }),
+        t(3, null),
+      ]),
+    ).toBe('Includes 2 refunds · total 15.11 USD')
+    expect(
+      approveAllRefundLine([
+        t(1, { amountCents: 512, currency: 'usd' }),
+        t(2, { amountCents: 800, currency: 'eur' }),
+      ]),
+    ).toBe('Includes 2 refunds · total 5.12 USD + 8.00 EUR')
   })
 
   it('lists the skipped tickets by number with the reason', () => {

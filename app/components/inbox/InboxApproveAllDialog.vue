@@ -4,7 +4,11 @@
  * tickets are skipped and why. The server decides the set; nothing is sent before Send.
  */
 import type { ApproveAllPreviewResponse } from '#shared/api'
-import { approveAllBreakdown, approveAllSkippedRows } from '~/composables/useInboxRows'
+import {
+  approveAllBreakdown,
+  approveAllRefundLine,
+  approveAllSkippedRows,
+} from '~/composables/useInboxRows'
 import { plural } from '~/utils/format'
 
 const props = defineProps<{
@@ -19,6 +23,7 @@ const open = defineModel<boolean>('open', { default: false })
 const count = computed(() => props.preview?.eligible.length ?? 0)
 const breakdown = computed(() => approveAllBreakdown(props.preview?.eligible ?? []))
 const skipped = computed(() => approveAllSkippedRows(props.preview?.skipped ?? []))
+const refundLine = computed(() => approveAllRefundLine(props.preview?.eligible ?? []))
 </script>
 
 <template>
@@ -32,13 +37,15 @@ const skipped = computed(() => approveAllSkippedRows(props.preview?.skipped ?? [
         <DialogTitle v-else>Send {{ plural(count, 'reply', 'replies') }}?</DialogTitle>
         <DialogDescription v-if="error">{{ error }}</DialogDescription>
         <DialogDescription v-else-if="!loading"
-          >Each reply is approved as proposed and sent now, with its actions, the same as pressing
-          Approve on the ticket. Sent replies can't be unsent. Risky, locked, irreversible and
-          handed-off tickets stay in the inbox for you.</DialogDescription
+          >Each reply is approved as proposed and sent now, with its actions, refunds and
+          cancellations included, the same as pressing Approve on the ticket. Sent replies can't be
+          unsent. High-risk, unclear and handed-off tickets stay in the inbox for
+          you.</DialogDescription
         >
       </DialogHeader>
       <div v-if="!loading && !error" class="mt-5 flex flex-col gap-5">
         <KeyValueList v-if="breakdown.length > 0" :items="breakdown" />
+        <Eyebrow v-if="refundLine" tone="ember">{{ refundLine }}</Eyebrow>
         <div v-if="skipped.length > 0" class="flex flex-col gap-2">
           <Eyebrow>{{ skipped.length }} skipped</Eyebrow>
           <KeyValueList :items="skipped" />

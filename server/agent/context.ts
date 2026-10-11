@@ -4,7 +4,9 @@
  * model gets.
  */
 import type { CustomerContext, CustomerContextTimelineEntry, TicketRow } from '#shared/api'
+import { SERVICE_PAUSE } from '#shared/config'
 import { money } from './attachments/stripe-timeline'
+import { pausedRefundFacts, type PostPauseCharge, type PrePausePayment } from './paused-refund'
 import type {
   LogLine,
   ResearchBundle,
@@ -58,6 +60,10 @@ export interface CustomerFacts {
   isLongTerm: boolean
   isNewCustomer: boolean
   tags: string[]
+  /** While InstaRadar is paused (SERVICE_PAUSE): the one refundable payment from before the pause. */
+  prePausePayment: PrePausePayment | null
+  /** While paused: every charge on or after the pause (refunded in full by a separate process). */
+  postPauseCharges: PostPauseCharge[]
 }
 
 const DAY = 86_400_000
@@ -128,7 +134,10 @@ export function deriveFacts(
   ticket: Pick<TicketRow, 'customerName' | 'instaradarUserId' | 'stripeCustomerId'>,
   research: ResearchBundle,
   now: Date,
+  opts: { pausedAt?: string | null } = {},
 ): CustomerFacts {
+  const pausedAt =
+    opts.pausedAt !== undefined ? opts.pausedAt : SERVICE_PAUSE.active ? SERVICE_PAUSE.since : null
   const stripe = research.stripe.data
   const ir = research.supabase.data
   const subs = [...(stripe?.subscriptions ?? [])].sort(
@@ -249,6 +258,15 @@ export function deriveFacts(
     isLongTerm,
     isNewCustomer,
     tags,
+    ...(pausedAt
+      ? pausedRefundFacts({
+          charges: stripe?.charges ?? [],
+          invoices,
+          refunds,
+          subscriptions: stripe?.subscriptions ?? [],
+          pausedAt,
+        })
+      : { prePausePayment: null, postPauseCharges: [] }),
   }
 }
 

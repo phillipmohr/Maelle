@@ -5,7 +5,7 @@
  */
 import type { MessageRow, TicketRow } from '#shared/api'
 import type { CaseType } from '#shared/case-types'
-import { AGENT } from '#shared/config'
+import { AGENT, SERVICE_PAUSE } from '#shared/config'
 import type { AgentRunResult, AgentTrigger, Services } from '#shared/services'
 import { canTransition, transition, type TicketStatus } from '#shared/status'
 import type { AttachmentStore } from './attachments/store'
@@ -176,7 +176,9 @@ export async function runAgent(
           knowledge.warnings[0]!,
       )
 
-    const facts = deriveFacts(ticket, research.bundle, now)
+    const facts = deriveFacts(ticket, research.bundle, now, {
+      pausedAt: config.servicePaused ? SERVICE_PAUSE.since : null,
+    })
     const previousTickets = (research.bundle.email.data ?? []).map((t) => ({
       id: t.id,
       displayNumber: t.displayNumber,
@@ -229,7 +231,10 @@ export async function runAgent(
           }
         : null
 
-    const system = buildSystemPrompt(knowledge, { supportMailbox: config.supportMailbox })
+    const system = buildSystemPrompt(knowledge, {
+      supportMailbox: config.supportMailbox,
+      servicePaused: config.servicePaused,
+    })
     const userMessage = buildUserMessage({
       ticket,
       messages,
@@ -244,6 +249,7 @@ export async function runAgent(
       release,
       followUp,
       now,
+      servicePaused: config.servicePaused,
     })
 
     const attachments = deps.attachments ?? createMemoryAttachmentStore()
@@ -268,6 +274,7 @@ export async function runAgent(
           caseOverride,
           attachments,
           now,
+          servicePaused: config.servicePaused,
         }),
       onToolOutcome: async (source: ProgressSource, ok: boolean) => {
         if (ok) await persistProgress({ [source]: 'ok' })

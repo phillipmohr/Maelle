@@ -46,7 +46,7 @@ export async function loadEvaluateContextFromDb(ticketId: string): Promise<Evalu
   let proposal: EvaluateProposal | null = null
   if (p) {
     const actions = await dbQuery<Row>(
-      'select action_type, enabled, stage from public.proposed_actions where proposal_id = $1 order by position',
+      'select action_type, enabled, stage, params from public.proposed_actions where proposal_id = $1 order by position',
       [p.id],
     )
     proposal = {
@@ -61,6 +61,7 @@ export async function loadEvaluateContextFromDb(ticketId: string): Promise<Evalu
         type: a.action_type as ActionType,
         enabled: a.enabled !== false,
         stage: (a.stage as ActionStage) ?? 'now',
+        params: (a.params as Record<string, unknown> | null) ?? {},
       })),
     }
   }
