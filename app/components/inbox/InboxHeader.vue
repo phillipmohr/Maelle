@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * Inbox header: serif title, summary line, the mailbox menu, the ⌘K search box (opens the palette)
- * and the 3-dot menu (Regenerate all unsent drafts).
+ * and the 3-dot menu (Approve & send all, Regenerate all unsent drafts).
  */
 import { useShortcuts } from '~/composables/useShortcuts'
 
-defineProps<{ summary: string; draftCount: number }>()
-const emit = defineEmits<{ regenerateAll: [] }>()
+defineProps<{ summary: string; draftCount: number; approvableCount: number }>()
+const emit = defineEmits<{ regenerateAll: []; approveAll: [] }>()
 const { paletteOpen } = useShortcuts()
 </script>
 
@@ -26,6 +26,18 @@ const { paletteOpen } = useShortcuts()
         <span>Search all tickets</span><Kbd keys="⌘K" />
       </button>
       <MoreMenu label="Inbox options">
+        <DropdownMenuItem
+          :disabled="approvableCount === 0"
+          :description="
+            approvableCount === 0
+              ? 'No unsent reply can be sent in bulk'
+              : 'Every safe unsent reply is approved as proposed and sent; you confirm first'
+          "
+          @select="emit('approveAll')"
+          >Approve & send all<template v-if="approvableCount > 0">
+            · {{ approvableCount }}</template
+          ></DropdownMenuItem
+        >
         <DropdownMenuItem
           :disabled="draftCount === 0"
           :description="

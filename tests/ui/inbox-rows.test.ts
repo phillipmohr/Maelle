@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { buildSeed } from '../../shared/seed/data'
 import { seedTicketList } from '../../shared/seed/views'
+import type { ApproveAllResponse, ApproveAllTicket } from '../../shared/api'
+import { caseLabel } from '../../shared/case-types'
 import {
+  approvableDrafts,
+  approveAllBreakdown,
+  approveAllSkippedRows,
+  approveAllToast,
   caseText,
   dayGroups,
   decisionPill,
@@ -25,6 +31,70 @@ const now = new Date('2026-09-27T10:00:00')
 const list = seedTicketList(buildSeed(now), now)
 const items = list.items
 const by = (n: number) => items.find((i) => i.displayNumber === n)!
+
+describe('approve & send all (IRDR-481)', () => {
+  it('counts the safe unsent drafts in the menu: no high risk, no safety', () => {
+    const drafts = regenerableDrafts(items)
+    const high = { ...by(4824), riskLevel: 'high' as const }
+    const safety = { ...by(4824), riskLevel: 'safety' as const }
+    expect(approvableDrafts([by(4824), high, safety])).toEqual([by(4824)])
+    expect(approvableDrafts(items).every((d) => drafts.includes(d) && d.riskLevel === 'none')).toBe(
+      true,
+    )
+  })
+
+  it('breaks the replies down per case type, the largest first', () => {
+    const t = (caseType: ApproveAllTicket['caseType'], n: number): ApproveAllTicket => ({
+      ticketId: String(n),
+      displayNumber: n,
+      customerName: null,
+      customerEmail: 'a@b.c',
+      caseType,
+      proposalVersion: 1,
+    })
+    const rows = approveAllBreakdown([
+      t('feature_request', 1),
+      t('cancellation_only', 2),
+      t('cancellation_only', 3),
+    ])
+    expect(rows).toEqual([
+      { label: caseLabel('cancellation_only'), value: '2' },
+      { label: caseLabel('feature_request'), value: '1' },
+    ])
+  })
+
+  it('lists the skipped tickets by number with the reason', () => {
+    expect(
+      approveAllSkippedRows([
+        { ticketId: 'b', displayNumber: 4830, reason: 'high_risk', detail: 'High risk' },
+        { ticketId: 'a', displayNumber: 4821, reason: 'handoff', detail: 'Handed to you' },
+      ]),
+    ).toEqual([
+      { label: '#4821', value: 'Handed to you' },
+      { label: '#4830', value: 'High risk' },
+    ])
+  })
+
+  it('turns the result into one toast; any failure makes it an error', () => {
+    const res: ApproveAllResponse = {
+      sent: [{ ticketId: 'a', displayNumber: 1, ticketStatus: 'closed' }],
+      skipped: [],
+      failed: [],
+    }
+    expect(approveAllToast(res)).toEqual({
+      tone: 'info',
+      title: 'Sent 1 reply',
+      description: 'Every reply went out as proposed.',
+    })
+    expect(
+      approveAllToast({
+        sent: [],
+        skipped: [{ ticketId: 'b', displayNumber: 2, reason: 'stale_version', detail: 'x' }],
+        failed: [{ ticketId: 'c', displayNumber: 3, error: 'boom' }],
+      }),
+    ).toEqual({ tone: 'error', title: 'Nothing was sent', description: '1 skipped · 1 failed: #3' })
+  })
+})
 
 describe('inbox rows', () => {
   it('counts the unsent drafts the 3-dot menu regenerates: needs decision with a proposal', () => {

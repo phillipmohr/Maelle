@@ -303,6 +303,62 @@ export interface RegenerateDraftsResponse {
   inline: boolean
 }
 
+// ---------------------------------------------------------------- GET/POST /api/tickets/approve-all (IRDR-481)
+
+/** A ticket "Approve & send all" would approve as proposed and send now. */
+export interface ApproveAllTicket {
+  ticketId: string
+  displayNumber: number
+  customerName: string | null
+  customerEmail: string
+  caseType: CaseType
+  /** The active proposal's version; the POST only approves a ticket still on it. */
+  proposalVersion: number
+}
+
+/** Why a ticket is left out of the bulk approval. */
+export type ApproveAllSkipReason =
+  | 'safety'
+  | 'high_risk'
+  | 'unclear'
+  | 'handoff'
+  | 'policy_warnings'
+  | 'confirmation_pending'
+  | 'locked_action'
+  | 'irreversible_action'
+  | 'no_reply'
+  | 'no_actions'
+  | 'no_proposal'
+  | 'stale_version'
+  | 'not_waiting'
+
+export interface ApproveAllSkipped {
+  ticketId: string
+  displayNumber: number | null
+  reason: ApproveAllSkipReason
+  /** One line for the dialog, e.g. "Locked action: Refund latest payment". */
+  detail: string
+}
+
+/** GET: what the confirmation dialog shows. The server decides; nothing is sent. */
+export interface ApproveAllPreviewResponse {
+  eligible: ApproveAllTicket[]
+  skipped: ApproveAllSkipped[]
+}
+
+/** POST: the tickets (and versions) the dialog showed. */
+export interface ApproveAllRequest {
+  tickets: { ticketId: string; proposalVersion: number }[]
+}
+
+export interface ApproveAllResponse {
+  sent: { ticketId: string; displayNumber: number; ticketStatus: string }[]
+  /** No longer eligible, or the draft changed after the dialog opened. */
+  skipped: ApproveAllSkipped[]
+  /** The approval failed; the other tickets went on. */
+  failed: { ticketId: string; displayNumber: number; error: string }[]
+}
+
 // ---------------------------------------------------------------- POST /api/agent/consistency-check (agent ticket IRDR-456)
 
 export interface ConsistencyCheckRequest {
@@ -424,7 +480,14 @@ export interface CronAck {
 // ---------------------------------------------------------------- Route table
 
 export type RouteOwner =
-  'IRDR-454' | 'IRDR-455' | 'IRDR-456' | 'IRDR-457' | 'IRDR-458' | 'IRDR-459' | 'IRDR-460'
+  | 'IRDR-454'
+  | 'IRDR-455'
+  | 'IRDR-456'
+  | 'IRDR-457'
+  | 'IRDR-458'
+  | 'IRDR-459'
+  | 'IRDR-460'
+  | 'IRDR-481'
 
 export interface RouteSpec {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -454,6 +517,8 @@ export const ROUTES: readonly RouteSpec[] = [
     owner: 'IRDR-456',
     auth: 'session',
   },
+  { method: 'GET', path: '/api/tickets/approve-all', owner: 'IRDR-481', auth: 'session' },
+  { method: 'POST', path: '/api/tickets/approve-all', owner: 'IRDR-481', auth: 'session' },
   { method: 'POST', path: '/api/agent/consistency-check', owner: 'IRDR-456', auth: 'session' },
   { method: 'GET', path: '/api/activity', owner: 'IRDR-459', auth: 'session' },
   { method: 'GET', path: '/api/activity/export.csv', owner: 'IRDR-459', auth: 'session' },
