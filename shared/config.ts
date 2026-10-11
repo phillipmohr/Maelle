@@ -157,3 +157,14 @@ export const JOBS = {
   longJobReserveMs: 200_000,
   fetchLaneBudgetMs: 50_000,
 } as const
+
+/**
+ * InstaRadar is paused (IRDR-479, IRDR-482): the product is offline for every customer and every
+ * subscription is paused. Hard-coded for now, no settings toggle. While `active`, the agent's
+ * guardrails, prompt and refund rules follow the paused-state rules on the Notion Customer Support
+ * page; `since` splits payments into the one refundable pre-pause payment and post-pause charges.
+ */
+export const SERVICE_PAUSE = {
+  active: true,
+  since: '2026-10-05T19:48:54Z',
+} as const

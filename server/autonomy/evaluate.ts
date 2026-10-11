@@ -28,7 +28,13 @@ export interface EvaluateProposal {
   policyWarnings: string[]
   customerConfirmationNeeded: boolean
   stage: 1 | 2
-  actions: { type: ActionType; enabled: boolean; stage: ActionStage }[]
+  actions: {
+    type: ActionType
+    enabled: boolean
+    stage: ActionStage
+    /** The action's params (the bulk dialog sums the refund amounts). */
+    params?: Record<string, unknown>
+  }[]
   /** Set when the agent handed the ticket to Phillip (IRDR-477). */
   handoffReason?: string | null
 }
@@ -83,12 +89,12 @@ export function isLocked(type: ActionType, locks: Partial<Record<ActionType, boo
 /**
  * The guards, in order; the first one that fails, or null when all pass. Pure, so the rules are
  * unit-tested without a database. `settings: false` leaves out the two Auto settings (global pause
- * and the case's mode): the bulk "Approve & send all" (IRDR-481) is Phillip's own decision, so only
- * the ticket and proposal guards apply there.
+ * and the case's mode) and `locks: false` the Auto locks: the bulk "Approve & send all" (IRDR-481,
+ * IRDR-482) is Phillip's own decision, so only the ticket and proposal guards apply there.
  */
 export function failedGuard(
   ctx: EvaluateContext,
-  opts: { settings: boolean } = { settings: true },
+  opts: { settings: boolean; locks?: boolean } = { settings: true },
 ): EvaluateResult | null {
   const ask = (reason: EvaluateReason, detail: string): EvaluateResult => ({
     verdict: 'ask',
@@ -113,12 +119,23 @@ export function failedGuard(
   if (p.policyWarnings.length > 0) {
     return ask('policy_warnings', `${p.policyWarnings.length} policy warning(s)`)
   }
-  if (p.customerConfirmationNeeded && p.stage === 1) {
+  // Stage 1 only asks the customer to confirm (IRDR-482): fine as long as nothing irreversible runs
+  // before their answer. The queued actions are checked again on the stage-2 proposal.
+  if (
+    p.customerConfirmationNeeded &&
+    p.stage === 1 &&
+    p.actions.some((a) => a.enabled && a.stage === 'now' && ACTIONS[a.type].irreversible)
+  ) {
     return ask('confirmation_pending', 'The customer has to confirm first')
   }
   const enabled = p.actions.filter((a) => a.enabled)
   if (enabled.length === 0) return ask('no_actions', 'Nothing to execute')
-  const locked = enabled.filter((a) => isLocked(a.type, ctx.locks))
+  // Locks apply to what runs now; actions queued until the customer confirms don't run yet. They are
+  // Auto locks: the bulk approval (Phillip's own click) leaves them out (`locks: false`).
+  const locked =
+    opts.locks === false
+      ? []
+      : enabled.filter((a) => a.stage !== 'after_confirmation' && isLocked(a.type, ctx.locks))
   if (locked.length > 0) {
     return ask('locked_action', `Locked for Auto: ${locked.map((a) => a.type).join(', ')}`)
   }

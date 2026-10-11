@@ -147,6 +147,7 @@ describe.skipIf(!TEST_URL)('executor parking, Auto and limits', () => {
     expect((await t.executor.runAuto(warned.ticketId)).refused).toBe(
       'Policy warnings: Second refund without a reason',
     )
+    // Stage 1 with the refund running now, before the customer's answer.
     const stage1 = await t.insertTicket({
       caseType: 'refund_request',
       confirmationNeeded: true,
@@ -155,7 +156,6 @@ describe.skipIf(!TEST_URL)('executor parking, Auto and limits', () => {
         {
           type: 'refund_latest_payment',
           params: { stripePaymentIntentId: 'pi_s1', amountCents: 1307 },
-          stage: 'after_confirmation',
         },
         { type: 'send_reply', params: { to: 's1@example.com' } },
       ],
@@ -280,6 +280,45 @@ describe.skipIf(!TEST_URL)('executor parking, Auto and limits', () => {
     )
     expect(await t.executor.runDueScheduled()).toEqual({ ran: 0 })
     await expect(t.executor.undo(ticketId)).rejects.toMatchObject({ statusCode: 409 })
+    t.clock.now = t0
+  })
+
+  it('Auto sends a stage-1 reply and the ticket waits for the customer; the locked refund stays queued (IRDR-482)', async () => {
+    const { ticketId } = await t.insertTicket({
+      caseType: 'refund_request',
+      confirmationNeeded: true,
+      email: 'stage1@example.com',
+      actions: [
+        {
+          type: 'cancel_immediately',
+          params: { stripeSubscriptionId: 'sub_stage1' },
+          stage: 'after_confirmation',
+        },
+        {
+          type: 'refund_latest_payment',
+          params: { stripePaymentIntentId: 'pi_stage1', amountCents: 512 },
+          stage: 'after_confirmation',
+        },
+        { type: 'send_reply', params: { to: 'stage1@example.com' } },
+      ],
+    })
+    const t0 = t.clock.now
+    expect((await t.executor.runAuto(ticketId)).ran).toBe(true)
+    expect((await t.ticket(ticketId)).status).toBe('auto_pending')
+    t.clock.now = new Date(t0.getTime() + 11 * 60_000)
+    expect(await t.executor.runDueScheduled()).toEqual({ ran: 1 })
+    const ticket = await t.ticket(ticketId)
+    expect(ticket.status).toBe('waiting_on_customer')
+    expect(ticket.waiting_for).toBeTruthy()
+    const rows = await t.executions(ticketId)
+    expect(rows.find((r) => r.action_type === 'send_reply')?.status).toBe('succeeded')
+    expect(
+      rows.filter((r) => r.action_type !== 'send_reply').map((r) => [r.action_type, r.status]),
+    ).toEqual([
+      ['refund_latest_payment', 'queued'],
+      ['cancel_immediately', 'queued'],
+    ])
+    expect(t.fakes.stripe.calls.some((c) => c.op === 'createRefund')).toBe(false)
     t.clock.now = t0
   })
 

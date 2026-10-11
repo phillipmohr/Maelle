@@ -67,13 +67,51 @@ describe('decide', () => {
     expect(decide({ ...base, proposal: { ...proposal, caseType: 'unclear' } }).reason).toBe(
       'unclear',
     )
-    expect(
-      decide({ ...base, proposal: { ...proposal, customerConfirmationNeeded: true, stage: 1 } })
-        .reason,
-    ).toBe('confirmation_pending')
+    // An irreversible action that would run before the customer's answer.
+    const refundNow: EvaluateProposal = {
+      ...proposal,
+      caseType: 'refund_request',
+      customerConfirmationNeeded: true,
+      stage: 1,
+      actions: [
+        { type: 'refund_latest_payment', enabled: true, stage: 'now' },
+        { type: 'send_reply', enabled: true, stage: 'now' },
+      ],
+    }
+    expect(decide({ ...base, proposal: refundNow }).reason).toBe('confirmation_pending')
     expect(decide({ ...base, proposal: null }).reason).toBe('no_proposal')
     expect(decide({ ...base, ticket: null }).reason).toBe('not_found')
     expect(decide({ ...base, databaseConfigured: false }).reason).toBe('no_database')
+  })
+
+  it('runs a stage-1 proposal on Auto: only the reply goes out, the locked refund waits (IRDR-482)', () => {
+    const stage1: EvaluateProposal = {
+      ...proposal,
+      caseType: 'refund_request',
+      customerConfirmationNeeded: true,
+      stage: 1,
+      actions: [
+        { type: 'cancel_immediately', enabled: true, stage: 'after_confirmation' },
+        { type: 'refund_latest_payment', enabled: true, stage: 'after_confirmation' },
+        { type: 'send_reply', enabled: true, stage: 'now' },
+      ],
+    }
+    expect(decide({ ...base, proposal: stage1 })).toMatchObject({ verdict: 'auto' })
+    // Stage 2 runs the queued actions now: the locks apply again.
+    const stage2: EvaluateProposal = {
+      ...stage1,
+      customerConfirmationNeeded: false,
+      stage: 2,
+      actions: stage1.actions.map((a) => ({ ...a, stage: 'now' as const })),
+    }
+    expect(decide({ ...base, proposal: stage2 }).reason).toBe('locked_action')
+    expect(
+      decide({
+        ...base,
+        proposal: stage2,
+        locks: { refund_latest_payment: false, cancel_immediately: false },
+      }).verdict,
+    ).toBe('auto')
   })
 
   it('falls back to Always ask when an enabled action is locked (registry default or row)', () => {

@@ -350,28 +350,48 @@ Stripe `cancellation_details` while the subscription is not cancelled) · `remov
 ### Auto
 
 `executor.runAuto(ticketId)` refuses when the global pause is on, the ticket or proposal risk is
-`high` or `safety`, the case is `unclear`, the proposal has policy warnings, a customer confirmation
-is pending, the proposal has no reply, or any enabled action is locked (`action_locks`, or
-`lockedByDefault` without a row). Otherwise it approves as `auto`: actions run now, the reply is
-scheduled after `settings.undo_window_minutes`, the ticket is `auto_pending`. `runDueScheduled()`
-(job `run_due_scheduled`) sends due replies and closes the tickets (resolution `auto`); a failed send
-returns the ticket to `needs_decision` with the proposal active. `undo` cancels the scheduled reply,
+`high` or `safety`, the case is `unclear`, the proposal has policy warnings, an irreversible action
+would run before a pending customer confirmation, the proposal has no reply, or an enabled action
+that runs now is locked (`action_locks`, or `lockedByDefault` without a row; actions queued with
+`stage: after_confirmation` don't count). Otherwise it approves as `auto`: actions run now, the reply
+is scheduled after `settings.undo_window_minutes`, the ticket is `auto_pending`. `runDueScheduled()`
+(job `run_due_scheduled`) sends due replies and closes the tickets (resolution `auto`), or, for a
+stage-1 reply that asks the customer to confirm, moves the ticket to `waiting_on_customer` with the
+irreversible actions still queued (IRDR-482); a failed send returns the ticket to `needs_decision`
+with the proposal active. `undo` cancels the scheduled reply,
 returns the ticket to `needs_decision` and lists what already ran (also stored on the cancelled row).
 
-### Approve & send all (IRDR-481)
+### Approve & send all (IRDR-481, IRDR-482)
 
 The inbox header's 3-dot menu (or ⌘K) approves every eligible unsent reply as proposed, after a
 confirm dialog. `GET /api/tickets/approve-all` lists the candidates (the regenerable drafts, see
-`server/agent/regenerate.ts`) split into eligible and skipped with the reason. Eligibility is the
-Auto guard set without the two Auto settings (`failedGuard(ctx, { settings: false })` in
-`server/autonomy/evaluate.ts`: global pause and the case's mode don't apply to Phillip's own
-decision) plus two bulk rules: no enabled irreversible action and an enabled Send reply
-(`server/executor/approve-all.ts`). `POST /api/tickets/approve-all` takes the tickets and proposal
-versions the dialog showed, recomputes eligibility and calls `executor.approve(id, { proposalVersion,
-actions: [] }, 'you')` one ticket after the other, so a ticket that is no longer eligible or whose
-draft was regenerated since is skipped, and the decision and audit rows are the same as a single
-approval without edits. A thrown approval or a failed/held action counts as failed (the ticket goes to
+`server/agent/regenerate.ts`) split into eligible and skipped with the reason, plus the refund each
+eligible ticket runs (the dialog shows "Includes N refunds · total"). Eligibility is the Auto guard
+set without the Auto settings and locks (`failedGuard(ctx, { settings: false, locks: false })` in
+`server/autonomy/evaluate.ts`: global pause, the case's mode and the Auto locks don't apply to
+Phillip's own decision) plus two bulk rules: never Delete account and an enabled Send reply
+(`server/executor/approve-all.ts`). Stage-1 proposals only send the reply that asks the customer to
+confirm; refunds and immediate cancellations run as proposed. `POST /api/tickets/approve-all` takes
+the tickets and proposal versions the dialog showed, recomputes eligibility and calls
+`executor.approve(id, { proposalVersion, actions: [], confirmIrreversible: true }, 'you')` one ticket
+after the other, so a ticket that is no longer eligible or whose draft was regenerated since is
+skipped, and the decision and audit rows are the same as a single approval without edits. A thrown approval or a failed/held action counts as failed (the ticket goes to
 `action_failed` as usual); the rest go on.
+
+### InstaRadar paused (IRDR-482)
+
+`SERVICE_PAUSE` in `shared/config.ts` (hard-coded, no setting) switches the agent and the executor
+to the paused-state rules of the Notion Customer Support page: the guardrails in
+`server/agent/policy.ts` drop the 30-day, second-refund, partial-refund and vague-reason warnings and
+the long-term-customer high risk; the prompt follows Notion (cancellation without a refund at period
+end, refunds only of the pre-pause payment or a post-pause charge, no Delete account, coupons, Linear
+tickets or release notices); the customer facts carry `prePausePayment` (with the prorated amount,
+`server/agent/paused-refund.ts`) and `postPauseCharges`, so the model never calculates an amount.
+The refund action accepts the latest payment before the pause or any charge after it, up to its
+remaining refundable amount; "Cancel at period end" on a paused subscription falls back to `cancel_at`
+at the end of the paid period when Stripe refuses. "Requires confirmation" comes from the Notion
+template (code registry as the fallback). The eval harness pins `servicePaused: false` to keep the
+normal rules covered; `tests/agent/paused.test.ts` covers the paused ones.
 
 ### Tests
 

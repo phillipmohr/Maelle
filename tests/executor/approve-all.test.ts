@@ -80,6 +80,7 @@ describe('decideBulk', () => {
         customerEmail: 'tom.becker@web.de',
         caseType: 'cancellation_only',
         proposalVersion: 3,
+        refund: null,
       },
     })
   })
@@ -98,39 +99,77 @@ describe('decideBulk', () => {
     expect(reason(ctx({ proposal: { ...proposal, policyWarnings: ['Over the limit'] } }))).toBe(
       'policy_warnings',
     )
-    expect(reason(ctx({ proposal: { ...proposal, customerConfirmationNeeded: true } }))).toBe(
-      'confirmation_pending',
-    )
+    // Stage 1 where the refund would run before the customer's answer.
+    expect(
+      reason(
+        ctx({
+          proposal: {
+            ...proposal,
+            customerConfirmationNeeded: true,
+            actions: [
+              { type: 'refund_latest_payment', enabled: true, stage: 'now' },
+              { type: 'send_reply', enabled: true, stage: 'now' },
+            ],
+          },
+        }),
+      ),
+    ).toBe('confirmation_pending')
     expect(reason(ctx({ proposal: null }))).toBe('no_proposal')
     expect(reason(ctx({ ticket: null }))).toBe('not_waiting')
     expect(reason(ctx({ ticket: ticket(1, { status: 'executing' }) }))).toBe('not_waiting')
   })
 
-  it('skips locked actions (default or unlocked for Auto) and irreversible ones', () => {
+  it('sends refunds and immediate cancellations (locks are for Auto), with the refund amount (IRDR-482)', () => {
     const refund: EvaluateProposal = {
       ...proposal,
+      caseType: 'refund_request',
+      stage: 2,
       actions: [
-        { type: 'refund_latest_payment', enabled: true, stage: 'now' },
+        {
+          type: 'refund_latest_payment',
+          enabled: true,
+          stage: 'now',
+          params: { amountCents: 512, currency: 'usd' },
+        },
+        { type: 'cancel_immediately', enabled: true, stage: 'now' },
         { type: 'send_reply', enabled: true, stage: 'now' },
       ],
     }
-    expect(decideBulk(ctx({ proposal: refund }))).toEqual({
-      send: false,
-      reason: 'locked_action',
-      detail: 'Locked action: Refund latest payment',
+    expect(decideBulk(ctx({ proposal: refund }))).toMatchObject({
+      send: true,
+      ticket: { refund: { amountCents: 512, currency: 'usd' } },
     })
-    // Unlocked for Auto still never goes out in bulk: bulk never confirms an irreversible action.
-    expect(decideBulk(ctx({ proposal: refund, locks: { refund_latest_payment: false } }))).toEqual({
+  })
+
+  it('sends a stage-1 proposal: only the reply goes out, the queued refund waits', () => {
+    const stage1: EvaluateProposal = {
+      ...proposal,
+      caseType: 'refund_request',
+      customerConfirmationNeeded: true,
+      actions: [
+        { type: 'refund_latest_payment', enabled: true, stage: 'after_confirmation' },
+        { type: 'send_reply', enabled: true, stage: 'now' },
+      ],
+    }
+    expect(decideBulk(ctx({ proposal: stage1 }))).toMatchObject({
+      send: true,
+      ticket: { refund: null },
+    })
+  })
+
+  it('never sends Delete account in bulk', () => {
+    const deletion: EvaluateProposal = {
+      ...proposal,
+      actions: [
+        { type: 'delete_account', enabled: true, stage: 'now' },
+        { type: 'send_reply', enabled: true, stage: 'now' },
+      ],
+    }
+    expect(decideBulk(ctx({ proposal: deletion }))).toEqual({
       send: false,
       reason: 'irreversible_action',
-      detail: 'Irreversible: Refund latest payment',
+      detail: 'Delete account is never sent in bulk',
     })
-    // A disabled irreversible action is not executed, so it does not block.
-    const disabled: EvaluateProposal = {
-      ...refund,
-      actions: [{ ...refund.actions[0]!, enabled: false }, refund.actions[1]!],
-    }
-    expect(decideBulk(ctx({ proposal: disabled })).send).toBe(true)
   })
 
   it('skips a proposal whose Send reply is off', () => {
@@ -174,7 +213,7 @@ describe('previewApproveAll', () => {
 })
 
 describe('approveAll', () => {
-  it('approves each requested ticket as proposed (no edits, no irreversible confirmation)', async () => {
+  it('approves each requested ticket as proposed (no edits; irreversible actions confirmed)', async () => {
     const approve = vi.fn(async () => ({ decisionId: 'd', ticketStatus: 'closed', executions: [] }))
     const a = ctx({ ticket: ticket(1) })
     const b = ctx({ ticket: ticket(2), proposal: { ...proposal, version: 2 } })
@@ -186,8 +225,14 @@ describe('approveAll', () => {
       ],
     })
     expect(approve.mock.calls).toEqual([
-      [ticket(1).id, { proposalVersion: 1, actions: [] } satisfies ApproveInput],
-      [ticket(2).id, { proposalVersion: 2, actions: [] } satisfies ApproveInput],
+      [
+        ticket(1).id,
+        { proposalVersion: 1, actions: [], confirmIrreversible: true } satisfies ApproveInput,
+      ],
+      [
+        ticket(2).id,
+        { proposalVersion: 2, actions: [], confirmIrreversible: true } satisfies ApproveInput,
+      ],
     ])
     expect(res).toEqual({
       sent: [

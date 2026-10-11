@@ -1,12 +1,14 @@
 /**
- * "Approve & send all" (IRDR-481): approves the active proposal of every eligible unsent draft
- * exactly as proposed, one ticket after the other, through the normal `executor.approve` path.
+ * "Approve & send all" (IRDR-481, IRDR-482): approves the active proposal of every eligible unsent
+ * draft exactly as proposed, one ticket after the other, through the normal `executor.approve` path.
  *
- * Eligibility is the Auto guard set without the two Auto settings (global pause, the case's mode),
- * see `failedGuard` in server/autonomy/evaluate.ts, plus two bulk-only rules: no enabled
- * irreversible action (bulk never confirms one) and an enabled Send reply. The server decides; the
- * POST recomputes it and only approves a ticket that is still eligible and still on the proposal
- * version the dialog showed, so a regenerated draft is never sent unseen.
+ * Eligibility is the Auto guard set without the Auto settings (global pause, the case's mode) and
+ * without the Auto locks, see `failedGuard` in server/autonomy/evaluate.ts. A stage-1 proposal only
+ * sends the reply that asks the customer to confirm. Refunds and immediate cancellations run as
+ * proposed (`confirmIrreversible: true`); Delete account is never sent in bulk; Send reply must be
+ * enabled. The server decides; the POST recomputes it and only approves a ticket that is still
+ * eligible and still on the proposal version the dialog showed, so a regenerated draft is never sent
+ * unseen.
  */
 import { ACTIONS } from '#shared/actions'
 import type {
@@ -18,7 +20,7 @@ import type {
   ApproveAllTicket,
 } from '#shared/api'
 import type { ApproveInput, ApproveResult } from '#shared/services'
-import { failedGuard, isLocked, type EvaluateContext } from '../autonomy/evaluate'
+import { failedGuard, type EvaluateContext } from '../autonomy/evaluate'
 
 export type BulkVerdict =
   | { send: true; ticket: ApproveAllTicket }
@@ -32,40 +34,32 @@ const skip = (reason: ApproveAllSkipReason, detail: string): BulkVerdict => ({
 
 /** Whether one ticket may be approved as proposed and sent in bulk. Pure. */
 export function decideBulk(ctx: EvaluateContext): BulkVerdict {
-  const failed = failedGuard(ctx, { settings: false })
+  const failed = failedGuard(ctx, { settings: false, locks: false })
   const p = ctx.proposal
   if (failed) {
     switch (failed.reason) {
-      // paused, always_ask and auto are not reachable with `settings: false`.
+      // paused, always_ask, locked_action and auto are not reachable with these options.
       case 'no_database':
       case 'not_found':
       case 'paused':
       case 'always_ask':
+      case 'locked_action':
       case 'auto':
         return skip('not_waiting', failed.detail)
-      case 'locked_action': {
-        const locked = (p?.actions ?? []).filter((a) => a.enabled && isLocked(a.type, ctx.locks))
-        return skip(
-          'locked_action',
-          `Locked action: ${locked.map((a) => ACTIONS[a.type].label).join(', ')}`,
-        )
-      }
       default:
         return skip(failed.reason, failed.detail)
     }
   }
   const t = ctx.ticket!
   const enabled = p!.actions.filter((a) => a.enabled)
-  const irreversible = enabled.filter((a) => ACTIONS[a.type].irreversible)
-  if (irreversible.length > 0) {
-    return skip(
-      'irreversible_action',
-      `Irreversible: ${irreversible.map((a) => ACTIONS[a.type].label).join(', ')}`,
-    )
+  if (enabled.some((a) => a.type === 'delete_account')) {
+    return skip('irreversible_action', 'Delete account is never sent in bulk')
   }
   if (!enabled.some((a) => a.type === 'send_reply')) return skip('no_reply', 'No reply to send')
   if (t.status !== 'needs_decision') return skip('not_waiting', 'Not waiting for a decision')
   if (p!.version == null) return skip('no_proposal', 'No active proposal')
+  const refundNow = enabled.find((a) => a.type === 'refund_latest_payment' && a.stage === 'now')
+  const amount = refundNow?.params?.amountCents
   return {
     send: true,
     ticket: {
@@ -75,6 +69,10 @@ export function decideBulk(ctx: EvaluateContext): BulkVerdict {
       customerEmail: t.customerEmail,
       caseType: p!.caseType,
       proposalVersion: p!.version,
+      refund:
+        typeof amount === 'number'
+          ? { amountCents: amount, currency: String(refundNow?.params?.currency ?? 'usd') }
+          : null,
     },
   }
 }
@@ -117,8 +115,8 @@ function message(err: unknown): string {
 
 /**
  * Approves the requested tickets that are still eligible and still on the requested version, as
- * proposed (`actions: []` keeps every action's proposed state, no reply edit, no irreversible
- * confirmation). One failure is recorded and the rest go on.
+ * proposed (`actions: []` keeps every action's proposed state, no reply edit; refunds and immediate
+ * cancellations are confirmed). One failure is recorded and the rest go on.
  */
 export async function approveAll(
   deps: ApproveAllDeps,
@@ -155,7 +153,11 @@ export async function approveAll(
       continue
     }
     try {
-      const result = await deps.approve(ticketId, { proposalVersion, actions: [] })
+      const result = await deps.approve(ticketId, {
+        proposalVersion,
+        actions: [],
+        confirmIrreversible: true,
+      })
       // The approval went through but an action failed or was held (e.g. the reply bounced): the
       // ticket is action_failed and waits for a retry on the ticket, so it is not "sent".
       const broken = result.executions.find((e) => e.status === 'failed' || e.status === 'held')

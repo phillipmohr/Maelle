@@ -7,6 +7,7 @@ import { caseTypeFromLabel } from '#shared/case-types'
 import { KNOWLEDGE_BASE } from '#shared/config'
 import examplesJson from '../../../docs/notion/examples.json'
 import templatesJson from '../../../docs/notion/templates.json'
+import { filterActiveExamples } from './notion'
 import { PROTOCOL_SNAPSHOT } from './protocol-snapshot'
 import type { Knowledge, KnowledgeBaseEntry, KnowledgeExample, KnowledgeTemplate } from './types'
 
@@ -26,16 +27,22 @@ export function snapshotTemplates(): KnowledgeTemplate[] {
   }))
 }
 
+/** The Active examples, like the live loader (the Draft ones stay in the file as eval fixtures). */
 export function snapshotExamples(): KnowledgeExample[] {
-  return examplesJson.examples.map((e) => ({
-    notionPageId: pageIdFromUrl(e.url),
-    url: e.url,
-    name: e.name,
-    category: e.category,
-    customerMessage: e.customerMessage,
-    response: null,
-    status: null,
-  }))
+  return filterActiveExamples(
+    examplesJson.examples.map((e) => {
+      const row = e as typeof e & { response?: string; status?: string }
+      return {
+        notionPageId: pageIdFromUrl(e.url),
+        url: e.url,
+        name: e.name,
+        category: e.category,
+        customerMessage: e.customerMessage,
+        response: row.response ?? null,
+        status: row.status ?? null,
+      }
+    }),
+  )
 }
 
 /**
@@ -48,7 +55,7 @@ export async function loadSnapshotKnowledge(
   const knowledgeBaseEnabled = opts.knowledgeBaseEnabled ?? KNOWLEDGE_BASE.enabled
   return {
     source: 'snapshot',
-    loadedAt: '2026-09-27T00:00:00.000Z',
+    loadedAt: '2026-10-11T00:00:00.000Z',
     protocol: PROTOCOL_SNAPSHOT,
     templates: snapshotTemplates(),
     examples: snapshotExamples(),

@@ -10,7 +10,15 @@
  * `process.env` is used instead of `useRuntimeConfig()` so the same module runs inside Nitro,
  * in vitest and in the eval runner.
  */
-import { AGENT, INSTARADAR, LINEAR, MAILBOX, MODELS, type Effort } from '#shared/config'
+import {
+  AGENT,
+  INSTARADAR,
+  LINEAR,
+  MAILBOX,
+  MODELS,
+  SERVICE_PAUSE,
+  type Effort,
+} from '#shared/config'
 
 export interface AgentRuntimeConfig {
   /** Claude API key (agent research + drafting). */
@@ -44,6 +52,11 @@ export interface AgentRuntimeConfig {
   sourceTimeoutMs: number
   /** How long the Notion knowledge stays cached in the process (ms). */
   knowledgeCacheTtlMs: number
+  /**
+   * InstaRadar is paused (SERVICE_PAUSE, IRDR-482): paused-state guardrails, prompt and refund facts.
+   * Always `SERVICE_PAUSE.active` in production; evals pin it to test the normal rules.
+   */
+  servicePaused: boolean
 }
 
 /**
@@ -77,6 +90,7 @@ export function agentRuntimeConfig(env: NodeJS.ProcessEnv = process.env): AgentR
     researchNudgeTurn: AGENT.researchNudgeTurn,
     sourceTimeoutMs: AGENT.sourceTimeoutMs,
     knowledgeCacheTtlMs: AGENT.knowledgeCacheTtlMs,
+    servicePaused: SERVICE_PAUSE.active,
   }
 }
 

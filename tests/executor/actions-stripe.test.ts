@@ -52,6 +52,60 @@ describe('cancel_at_period_end', () => {
   })
 })
 
+describe('cancellations on a paused subscription (IRDR-482)', () => {
+  const h = ACTION_HANDLERS.cancel_at_period_end
+
+  it('cancels a paused subscription at period end without ending it now', async () => {
+    const { ctx, fakes } = makeCtx()
+    seedTom(fakes)
+    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
+    const out = await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
+    expect(out.result).toMatchObject({ cancelAtPeriodEnd: true })
+    const s = fakes.stripe.state.subscriptions.get('sub_1PzT8c')!
+    expect(s.status).toBe('paused')
+    expect(s.cancelAtPeriodEnd).toBe(true)
+  })
+
+  it('falls back to cancel_at = end of the paid period when Stripe refuses, and never cancels now', async () => {
+    const { ctx, fakes } = makeCtx()
+    seedTom(fakes)
+    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
+    const refused = () =>
+      new ProviderError('Stripe', 'This subscription is paused', {
+        code: 'invalid_request_error',
+        statusCode: 400,
+        requestId: 'req_paused',
+      })
+    const end = Math.floor(Date.UTC(2026, 9, 14) / 1000)
+    fakes.stripe.state.paidPeriodEnds.set('sub_1PzT8c', end)
+    fakes.stripe.failNext({ op: 'updateSubscription', error: refused() })
+    const out = await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
+    expect(out.result).toMatchObject({ accessUntil: '2026-10-14' })
+    expect(fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.cancelAt).toBe(end)
+    expect(fakes.stripe.calls.some((c) => c.op === 'cancelSubscription')).toBe(false)
+
+    // The paid period is already over: it stays paused and the action fails clearly.
+    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.cancelAt = null
+    fakes.stripe.state.paidPeriodEnds.set('sub_1PzT8c', Math.floor(Date.UTC(2026, 8, 20) / 1000))
+    fakes.stripe.failNext({ op: 'updateSubscription', error: refused() })
+    await expect(h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)).rejects.toThrow(
+      /stays paused and is not charged/,
+    )
+    expect(fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status).toBe('paused')
+  })
+
+  it('cancels a paused subscription immediately (refunds end it)', async () => {
+    const { ctx, fakes } = makeCtx()
+    seedTom(fakes)
+    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
+    const out = await ACTION_HANDLERS.cancel_immediately.run(
+      { stripeSubscriptionId: 'sub_1PzT8c' },
+      ctx,
+    )
+    expect(out.result).toMatchObject({ status: 'canceled' })
+  })
+})
+
 describe('cancel_immediately', () => {
   it('cancels now, once, and does not touch InstaRadar data', async () => {
     const { ctx, fakes } = makeCtx()
@@ -133,6 +187,79 @@ describe('refund_latest_payment', () => {
     )
     await expect(h.run({ ...params, currency: 'eur' }, ctx)).rejects.toThrow(/Currency mismatch/)
     expect(fakes.stripe.state.refunds.size).toBe(0)
+  })
+
+  describe('while InstaRadar is paused (IRDR-482)', () => {
+    const pausedSince = '2026-10-05T19:48:54Z'
+    const unix = (iso: string) => Math.floor(new Date(iso).getTime() / 1000)
+    function seedPaused(fakes: ReturnType<typeof makeCtx>['fakes']) {
+      seedTom(fakes)
+      // ch_tom is the payment from before the pause; a post-pause charge was refunded in full.
+      fakes.stripe.state.charges.get('ch_tom')!.created = unix('2026-10-02T10:00:00Z')
+      fakes.stripe.addCharge({
+        id: 'ch_post',
+        customer: 'cus_TBecker0203',
+        amount: 799,
+        amountRefunded: 799,
+        refunded: true,
+        paid: true,
+        status: 'succeeded',
+        paymentIntent: null,
+        currency: 'usd',
+        created: unix('2026-10-07T10:00:00Z'),
+      })
+      fakes.stripe.addCharge({
+        id: 'ch_old',
+        customer: 'cus_TBecker0203',
+        amount: 799,
+        amountRefunded: 0,
+        refunded: false,
+        paid: true,
+        status: 'succeeded',
+        paymentIntent: null,
+        currency: 'usd',
+        created: unix('2026-09-25T10:00:00Z'),
+      })
+    }
+
+    it('refunds the pre-pause payment although a newer post-pause charge exists, then its remainder', async () => {
+      const { ctx, fakes } = makeCtx({ servicePausedSince: pausedSince })
+      seedPaused(fakes)
+      const first = await h.run({ ...params, amountCents: 410 }, ctx)
+      expect(first.result).toMatchObject({ amountCents: 410, chargeId: 'ch_tom', partial: true })
+      // The follow-up is a new proposal, so a new idempotency key.
+      const rest = await h.run(
+        { ...params, amountCents: 389 },
+        { ...ctx, idempotencyKey: `${ctx.ticket.id}:v2:p0` },
+      )
+      expect(rest.result).toMatchObject({ amountCents: 389, partial: false })
+      expect(fakes.stripe.state.charges.get('ch_tom')!.amountRefunded).toBe(799)
+      // Nothing left: a third refund is refused.
+      await expect(
+        h.run({ ...params, amountCents: 1 }, { ...ctx, idempotencyKey: `${ctx.ticket.id}:v3:p0` }),
+      ).rejects.toThrow(/already refunded in full/)
+    })
+
+    it('refuses an older payment and more than the remaining amount', async () => {
+      const { ctx, fakes } = makeCtx({ servicePausedSince: pausedSince })
+      seedPaused(fakes)
+      await expect(
+        h.run(
+          {
+            stripeChargeId: 'ch_old',
+            amountCents: 100,
+            currency: 'usd',
+            reason: 'requested_by_customer',
+          },
+          ctx,
+        ),
+      ).rejects.toThrow(/only the latest payment before the pause \(ch_tom/)
+      fakes.stripe.state.charges.get('ch_tom')!.amountRefunded = 500
+      await expect(h.run({ ...params, amountCents: 300 }, ctx)).rejects.toThrow(
+        /more than the \$2\.99 still refundable/,
+      )
+      expect(fakes.stripe.calls.filter((c) => c.op === 'createRefund')).toHaveLength(0)
+    })
   })
 
   it('enforces the daily count and amount limits from settings', async () => {

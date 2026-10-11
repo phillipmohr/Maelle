@@ -177,6 +177,8 @@ export function harnessDeps(
   const config: AgentRuntimeConfig = {
     ...agentRuntimeConfig({} as NodeJS.ProcessEnv),
     sourceTimeoutMs: 5_000,
+    // The fixtures describe the normal rules; the paused-state rules have their own tests.
+    servicePaused: false,
     ...opts.config,
   }
   return {

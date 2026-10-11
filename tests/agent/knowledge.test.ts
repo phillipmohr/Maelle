@@ -36,10 +36,11 @@ describe('knowledge snapshot', () => {
     )
   })
 
-  it('loads the snapshot with the 10 examples and an empty knowledge base', async () => {
+  it('loads the snapshot with the Active example only and an empty knowledge base', async () => {
     const k = await loadSnapshotKnowledge()
     expect(k.source).toBe('snapshot')
-    expect(k.examples).toHaveLength(10)
+    // The 10 examples from before the pause are Draft in Notion: kept as eval fixtures, not loaded.
+    expect(k.examples.map((e) => e.name)).toEqual(['Service status, down for good or temporarily'])
     expect(k.knowledgeBase).toEqual([])
     expect(k.protocol).toMatch(/Never use em-dashes/)
   })

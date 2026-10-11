@@ -6,6 +6,7 @@
  */
 import { ACTIONS, safeParseActionParams, sortByActionOrder, type ActionType } from '#shared/actions'
 import { CASE_TYPES, type CaseType } from '#shared/case-types'
+import { SERVICE_PAUSE } from '#shared/config'
 import { EM_DASH_RE, type ReplyDraft } from '#shared/proposal'
 import type {
   ApproveResult,
@@ -124,6 +125,12 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
     mail: deps.mail,
     now: deps.now,
     log: deps.log,
+    servicePausedSince:
+      deps.servicePausedSince !== undefined
+        ? deps.servicePausedSince
+        : SERVICE_PAUSE.active
+          ? SERVICE_PAUSE.since
+          : null,
   }
   const nowIso = () => deps.now().toISOString()
 
@@ -759,10 +766,12 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
         return refused(`Policy warnings: ${proposal.policyWarnings.join('; ')}`)
       }
       const enabled = proposal.actions.filter((a) => a.enabled)
+      // Stage 1 (IRDR-482): Auto sends the reply that asks the customer to confirm; the irreversible
+      // actions stay queued until their answer brings a stage-2 proposal.
       if (
         proposal.customerConfirmationNeeded &&
         proposal.stage === 1 &&
-        enabled.some((a) => a.stage === 'after_confirmation')
+        enabled.some((a) => a.stage === 'now' && ACTIONS[a.type].irreversible)
       ) {
         return refused('Customer confirmation pending')
       }
@@ -770,7 +779,11 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
         return refused('No reply to send')
       }
       const locks = await repo.loadLocks(db, ticket.appId)
-      const locked = enabled.filter((a) => locks.get(a.type) ?? ACTIONS[a.type].lockedByDefault)
+      const locked = enabled.filter(
+        (a) =>
+          a.stage !== 'after_confirmation' &&
+          (locks.get(a.type) ?? ACTIONS[a.type].lockedByDefault),
+      )
       if (locked.length > 0) {
         return refused(`Locked for Auto: ${locked.map((a) => ACTIONS[a.type].label).join(', ')}`)
       }
@@ -827,10 +840,24 @@ export function createExecutorService(overrides: Partial<ExecutorDeps> = {}): Ma
           const t = await mustFindTicket(tx, ticket.id, true)
           if (t.status !== 'auto_pending') return
           if (done?.status === 'succeeded') {
-            await repo.updateTicketStatus(tx, t, 'closed', {
-              resolution: 'auto',
-              closedAt: nowIso(),
-            })
+            // A stage-1 reply asked the customer to confirm: the ticket waits for their answer.
+            const queued = latestAttempts(await scopeRows(tx, ticket.id, scopeKey)).filter(
+              (e) => e.status === 'queued' && e.stage === 'after_confirmation',
+            )
+            if (queued.length > 0) {
+              await repo.updateTicketStatus(tx, t, 'waiting_on_customer', {
+                waitingFor: waitingForText(
+                  replyDraftOf(row),
+                  queued.map((q) => q.type),
+                ),
+                stage: 1,
+              })
+            } else {
+              await repo.updateTicketStatus(tx, t, 'closed', {
+                resolution: 'auto',
+                closedAt: nowIso(),
+              })
+            }
           } else {
             // The send failed: back to the inbox with the proposal active, so a human decides.
             await repo.updateTicketStatus(tx, t, 'needs_decision')

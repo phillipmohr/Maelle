@@ -100,6 +100,10 @@ function invoiceSummary(i: Stripe.Invoice): StripeInvoiceSummary {
   const o = i as unknown as Obj
   const parent = o.parent as Obj | undefined
   const subDetails = parent?.subscription_details as Obj | undefined
+  // The invoice's own period_start/period_end is the past usage period; the paid period of a
+  // subscription invoice is on its line item.
+  const lines = ((o.lines as Obj | undefined)?.data as Obj[] | undefined) ?? []
+  const period = lines.map((l) => l.period as Obj | undefined).find((p) => p && num(p.end))
   return {
     id: i.id ?? '',
     status: i.status ?? null,
@@ -112,6 +116,8 @@ function invoiceSummary(i: Stripe.Invoice): StripeInvoiceSummary {
     nextPaymentAttempt: iso(i.next_payment_attempt),
     subscriptionId: idOf(o.subscription) ?? idOf(subDetails?.subscription),
     billingReason: i.billing_reason ?? null,
+    periodStart: iso(num(period?.start)),
+    periodEnd: iso(num(period?.end)),
   }
 }
 

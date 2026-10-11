@@ -6,6 +6,10 @@ import type { StripeCharge } from '../clients/stripe'
 /**
  * Refunds only the latest successful payment, never one that was already refunded, at most the paid
  * amount, within the daily count and amount limits from settings. Irreversible.
+ *
+ * While InstaRadar is paused (`ctx.servicePausedSince`, IRDR-482) the target is the latest payment
+ * from before the pause or any charge after it, and a partly refunded payment can be refunded again
+ * up to its remaining amount (the prorated refund first, the remainder on a follow-up).
  */
 export const refundLatestPayment: ActionHandler<'refund_latest_payment'> = {
   type: 'refund_latest_payment',
@@ -47,22 +51,46 @@ export const refundLatestPayment: ActionHandler<'refund_latest_payment'> = {
     if (!charge.paid || charge.status !== 'succeeded') {
       throw new PreconditionError(`Payment ${charge.id} did not succeed (status ${charge.status})`)
     }
-    if (charge.amountRefunded > 0) {
+    const pausedAt = ctx.servicePausedSince
+      ? Math.floor(new Date(ctx.servicePausedSince).getTime() / 1000)
+      : null
+    const refundedBefore = charge.amountRefunded
+    const remaining = charge.amount - refundedBefore
+    if (pausedAt == null && charge.amountRefunded > 0) {
       throw new PreconditionError(
         `Payment ${charge.id} was already refunded (${formatMoney(charge.amountRefunded, charge.currency)} of ${formatMoney(charge.amount, charge.currency)})`,
       )
     }
+    if (pausedAt != null && remaining <= 0) {
+      throw new PreconditionError(
+        `Payment ${charge.id} is already refunded in full (${formatMoney(charge.amountRefunded, charge.currency)})`,
+      )
+    }
     const customer = charge.customer ?? ctx.ticket.stripeCustomerId
     if (customer) {
-      const charges = await stripe.listCharges(customer, 10)
-      const latest = charges
+      const charges = (await stripe.listCharges(customer, 25))
         .filter((c) => c.paid && c.status === 'succeeded')
-        .sort((a, b) => b.created - a.created)[0]
-      if (latest && latest.id !== charge.id) {
-        throw new PreconditionError(
-          `Not the latest payment: ${latest.id} from ${shortDate(isoDateFromUnix(latest.created))} is newer`,
-        )
+        .sort((a, b) => b.created - a.created)
+      if (pausedAt == null) {
+        const latest = charges[0]
+        if (latest && latest.id !== charge.id) {
+          throw new PreconditionError(
+            `Not the latest payment: ${latest.id} from ${shortDate(isoDateFromUnix(latest.created))} is newer`,
+          )
+        }
+      } else if (charge.created < pausedAt) {
+        const prePause = charges.find((c) => c.created < pausedAt)
+        if (prePause && prePause.id !== charge.id) {
+          throw new PreconditionError(
+            `Not refundable while InstaRadar is paused: only the latest payment before the pause (${prePause.id} from ${shortDate(isoDateFromUnix(prePause.created))}) or a charge after it`,
+          )
+        }
       }
+    }
+    if (pausedAt != null && params.amountCents > remaining) {
+      throw new PreconditionError(
+        `Refund amount ${formatMoney(params.amountCents, charge.currency)} is more than the ${formatMoney(remaining, charge.currency)} still refundable on this payment`,
+      )
     }
     if (params.amountCents > charge.amount) {
       throw new PreconditionError(
@@ -111,7 +139,7 @@ export const refundLatestPayment: ActionHandler<'refund_latest_payment'> = {
         paymentIntentId: charge.paymentIntent,
         cardLabel: params.cardLabel ?? null,
         paymentDate: params.paymentDate ?? isoDateFromUnix(charge.created),
-        partial: refund.amount < charge.amount,
+        partial: refund.amount + refundedBefore < charge.amount,
       },
       externalRefs: { stripeRefund: refund.id, stripeCharge: charge.id },
     }

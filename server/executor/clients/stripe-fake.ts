@@ -35,6 +35,8 @@ export interface FakeStripe extends StripeWriteClient {
     invoices: Map<string, StripeInvoice>
     coupons: Map<string, StripeCoupon>
     promotionCodes: Map<string, StripePromotionCode>
+    /** End of the latest paid period per subscription (unix seconds), for `latestPaidPeriodEnd`. */
+    paidPeriodEnds: Map<string, number>
   }
   readonly calls: { op: FakeStripeOp; args: unknown[]; idempotencyKey?: string }[]
   failNext(failure: FakeStripeFailure): void
@@ -83,6 +85,7 @@ export function createFakeStripe(): FakeStripe {
     invoices: new Map(),
     coupons: new Map(),
     promotionCodes: new Map(),
+    paidPeriodEnds: new Map(),
   }
   const calls: FakeStripe['calls'] = []
   const failures: FakeStripeFailure[] = []
@@ -216,6 +219,7 @@ export function createFakeStripe(): FakeStripe {
           s.cancelAtPeriodEnd = params.cancelAtPeriodEnd
           s.cancelAt = params.cancelAtPeriodEnd ? s.currentPeriodEnd : null
         }
+        if (params.cancelAt !== undefined) s.cancelAt = params.cancelAt
         if (params.cancellationDetails) {
           s.cancellationDetails = {
             feedback: params.cancellationDetails.feedback ?? null,
@@ -322,6 +326,10 @@ export function createFakeStripe(): FakeStripe {
             (!params.subscription || i.subscription === params.subscription),
         ),
       )
+    },
+    async latestPaidPeriodEnd(subscriptionId) {
+      record('latestPaidPeriodEnd', [subscriptionId])
+      return state.paidPeriodEnds.get(subscriptionId) ?? null
     },
     async retrieveInvoice(id) {
       record('retrieveInvoice', [id])

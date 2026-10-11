@@ -31,7 +31,7 @@ const { paletteOpen } = useShortcuts()
           :description="
             approvableCount === 0
               ? 'No unsent reply can be sent in bulk'
-              : 'Every safe unsent reply is approved as proposed and sent; you confirm first'
+              : 'Every unsent reply that is not high risk is approved as proposed and sent; you confirm first'
           "
           @select="emit('approveAll')"
           >Approve & send all<template v-if="approvableCount > 0">

@@ -5,7 +5,8 @@
  * needs_decision ↔ snoozed
  * waiting_on_customer → researching (customer reply) | closed (marked done, the customer never wrote)
  * needs_decision → manual → closed (after reject)
- * executing → auto_pending → closed (Auto, undo window)
+ * executing → auto_pending → closed (Auto, undo window) | waiting_on_customer (Auto sent a stage-1
+ *   reply that asks the customer to confirm, IRDR-482)
  * closed → researching (customer writes again)
  */
 
@@ -51,7 +52,7 @@ export const TRANSITIONS: Readonly<Record<TicketStatus, readonly TicketStatus[]>
   // manual send runs actions → executing → closed; or straight to closed
   manual: ['closed', 'executing'],
   // undo window elapsed → closed, undo → needs_decision
-  auto_pending: ['closed', 'needs_decision'],
+  auto_pending: ['closed', 'needs_decision', 'waiting_on_customer'],
   closed: ['researching'],
 }
 
