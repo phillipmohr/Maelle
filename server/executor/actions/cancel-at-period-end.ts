@@ -1,14 +1,18 @@
-import { PreconditionError, ProviderError } from '../errors'
+import { ACTION_PARAM_SCHEMAS } from '#shared/actions'
+import type { CancellationDetailsInput } from '../clients/stripe'
+import { PreconditionError } from '../errors'
 import { isoDateFromUnix } from '../format'
-import type { ActionHandler } from '../types'
+import type { ActionContext, ActionHandler } from '../types'
 
 /**
  * Stops renewals; the customer keeps access until the paid period ends. Returns that date.
  *
- * A paused subscription (InstaRadar is paused, IRDR-482) never charges and stays paused until it
- * ends. If Stripe refuses `cancel_at_period_end` on it, the subscription gets `cancel_at` = the end
- * of its latest paid period instead; when that is already over it stays paused and the action fails
- * with a clear message (never an immediate cancellation, never a deletion).
+ * A paused subscription (InstaRadar is paused, IRDR-479) is cancelled now instead (IRDR-483):
+ * Stripe refuses `cancel_at_period_end` and `cancel_at` on it and only allows resume or the cancel
+ * endpoint, and its billing period already ended at the pause (`current_period_end` = pause time).
+ * It never charges again, and InstaRadar keeps the data on cancellation (preservation hold,
+ * IRDR-474). The proposal's cancellation reason goes along with the cancel call, because Stripe
+ * takes `cancellation_details` on a paused subscription only when it is cancelled.
  */
 export const cancelAtPeriodEnd: ActionHandler<'cancel_at_period_end'> = {
   type: 'cancel_at_period_end',
@@ -41,29 +45,32 @@ export const cancelAtPeriodEnd: ActionHandler<'cancel_at_period_end'> = {
     if (current.status === 'incomplete_expired') {
       throw new PreconditionError(`Subscription ${id} is ${current.status} and cannot be cancelled`)
     }
-    let updated
-    try {
-      updated = await stripe.updateSubscription(
+    if (current.status === 'paused') {
+      // Own key: earlier attempts used the base key on the update endpoint, and Stripe refuses a key
+      // reused on another endpoint.
+      const cancelled = await stripe.cancelSubscription(
         id,
-        { cancelAtPeriodEnd: true },
-        { idempotencyKey: ctx.idempotencyKey },
+        { cancellationDetails: cancellationDetailsOf(ctx) },
+        { idempotencyKey: `${ctx.idempotencyKey}:cancel` },
       )
-    } catch (err) {
-      const refused =
-        current.status === 'paused' && err instanceof ProviderError && err.statusCode === 400
-      if (!refused) throw err
-      const end = await stripe.latestPaidPeriodEnd(id)
-      if (!end || end * 1000 <= ctx.now().getTime()) {
-        throw new PreconditionError(
-          `Subscription ${id} is paused and Stripe refused to cancel it at period end; its paid period ${end ? `ended on ${isoDateFromUnix(end)}` : 'is unknown'}, so it stays paused and is not charged`,
-        )
+      const cancelledAt =
+        isoDateFromUnix(cancelled.canceledAt) ?? ctx.now().toISOString().slice(0, 10)
+      return {
+        result: {
+          subscriptionId: id,
+          status: cancelled.status,
+          cancelledAt,
+          accessUntil: cancelledAt,
+          note: 'Paused subscription: cancelled now, its billing period ended at the pause',
+        },
+        externalRefs: { stripeSubscription: id },
       }
-      updated = await stripe.updateSubscription(
-        id,
-        { cancelAt: end },
-        { idempotencyKey: `${ctx.idempotencyKey}:cancel-at` },
-      )
     }
+    const updated = await stripe.updateSubscription(
+      id,
+      { cancelAtPeriodEnd: true },
+      { idempotencyKey: ctx.idempotencyKey },
+    )
     return {
       result: {
         subscriptionId: id,
@@ -76,4 +83,15 @@ export const cancelAtPeriodEnd: ActionHandler<'cancel_at_period_end'> = {
       externalRefs: { stripeSubscription: id },
     }
   },
+}
+
+/** The reason of the proposal's enabled Store cancellation reason action, for Stripe's cancel call. */
+function cancellationDetailsOf(ctx: ActionContext): CancellationDetailsInput | undefined {
+  const action = ctx.proposal?.actions.find(
+    (a) => a.type === 'store_cancellation_reason' && a.enabled,
+  )
+  if (!action) return undefined
+  const parsed = ACTION_PARAM_SCHEMAS.store_cancellation_reason.safeParse(action.params)
+  if (!parsed.success) return undefined
+  return { feedback: parsed.data.feedback, comment: parsed.data.comment }
 }

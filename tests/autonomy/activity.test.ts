@@ -35,6 +35,13 @@ describe('parameter lines (design 2c)', () => {
     expect(line(4812, 'refund_latest_payment', 'failed')).toBe('$13.07 · Visa ··5521')
     expect(line(4816, 'create_linear_ticket')).toBe('INS-209 · linked')
     expect(line(4808, 'stop_failed_payment_retries')).toBe('cus_MRossi7712')
+    expect(
+      describeExecution({
+        type: 'cancel_at_period_end',
+        params: { stripeSubscriptionId: 'sub_p' },
+        result: { status: 'canceled', accessUntil: '2026-10-12' },
+      }),
+    ).toBe('paused, cancelled now')
   })
 
   it('labels results', () => {

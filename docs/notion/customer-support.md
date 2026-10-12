@@ -1,4 +1,4 @@
-# Customer Support (Notion snapshot, 2026-10-11)
+# Customer Support (Notion snapshot, 2026-10-12)
 
 Source: https://app.notion.com/p/3e8c931f6ae58012a0a7ec9a1adb4259 (Maelle Superbrain / Features / Customer Support).
 The agent reads this page at runtime with NOTION_TOKEN; this file is the fallback when Notion is unavailable and the fixture for tests and evals.
@@ -15,7 +15,7 @@ Related databases:
 
 - **Research** in Stripe, Supabase and the email history before every reply: charges and refunds since October 5, the latest payment before October 5 with its billing period, the subscription status and earlier tickets
 - **Refund** according to the refund rules below
-- **Cancel subscriptions** at the end of the paid period when the customer does not ask for a refund. Cancel immediately only together with a refund, after the customer confirmed. See the Rules
+- **Cancel subscriptions** with Cancel at period end when the customer does not ask for a refund. A paused subscription ends right away, see the Rules. Cancel immediately only together with a refund, after the customer confirmed
 - **Stop failed-payment retries** for cancelled or inactive subscriptions
 - **Remove a profile from tracking and viewing** on a safety request
 - **Store the cancellation reason** for every cancellation. Use "service paused" unless the customer names another reason
@@ -81,9 +81,10 @@ Related databases:
 
 **Cancellations**
 
-- A cancellation without a refund request is always cancelled at the end of the paid period, never immediately. This also applies when the customer asks to cancel immediately. A cancellation without a refund request gets no refund
-- This needs no confirmation, because nothing ends right away. Cancel straight away and tell the customer that their subscription is cancelled and will not renew, that it stays paused until it ends and that they will not be charged again
-- Tell them that when the subscription ends, the data saved in their account will be deleted, most importantly their saved tracking activity, and that they can get their data back if InstaRadar comes back
+- A cancellation without a refund request always uses Cancel at period end, never Cancel immediately. This also applies when the customer asks to cancel immediately. A cancellation without a refund request gets no refund
+- A paused subscription ends right away with Cancel at period end, because Stripe cannot cancel a paused subscription at a later date and its billing period already ended at the pause. The customer loses nothing they paid for
+- This needs no confirmation. Cancel straight away and tell the customer that their subscription is cancelled and that they will not be charged again. Do not promise access until a date
+- Tell them that with the cancellation the data saved in their account will be deleted even though InstaRadar is down, most importantly their saved tracking activity, and that they can get their data back if InstaRadar comes back
 - Immediate cancellation happens only together with a refund, see A refund ends the subscription. Do not push the customer to stay
 
 **Data**

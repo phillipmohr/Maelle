@@ -35,8 +35,6 @@ export interface FakeStripe extends StripeWriteClient {
     invoices: Map<string, StripeInvoice>
     coupons: Map<string, StripeCoupon>
     promotionCodes: Map<string, StripePromotionCode>
-    /** End of the latest paid period per subscription (unix seconds), for `latestPaidPeriodEnd`. */
-    paidPeriodEnds: Map<string, number>
   }
   readonly calls: { op: FakeStripeOp; args: unknown[]; idempotencyKey?: string }[]
   failNext(failure: FakeStripeFailure): void
@@ -85,7 +83,6 @@ export function createFakeStripe(): FakeStripe {
     invoices: new Map(),
     coupons: new Map(),
     promotionCodes: new Map(),
-    paidPeriodEnds: new Map(),
   }
   const calls: FakeStripe['calls'] = []
   const failures: FakeStripeFailure[] = []
@@ -121,6 +118,13 @@ export function createFakeStripe(): FakeStripe {
     return response
   }
 
+  function invalid(message: string): ProviderError {
+    return new ProviderError('Stripe', message, {
+      code: 'invalid_request_error',
+      statusCode: 400,
+      requestId: 'req_fakeinvalid',
+    })
+  }
   function missing(kind: string, id: string): ProviderError {
     return new ProviderError('Stripe', `No such ${kind}: '${id}'`, {
       code: 'resource_missing',
@@ -215,11 +219,22 @@ export function createFakeStripe(): FakeStripe {
             },
           )
         }
+        // Stripe allows only resume or the cancel endpoint on a paused subscription (IRDR-483).
+        if (s.status === 'paused' && params.cancelAtPeriodEnd !== undefined) {
+          throw invalid(
+            "You can't pass cancel_at_period_end when updating a paused subscription. You can cancel the subscription immediately using the cancel endpoint (DELETE /v1/subscriptions/:id).",
+          )
+        }
+        const setToCancel = (params.cancelAtPeriodEnd ?? s.cancelAtPeriodEnd) || s.cancelAt !== null
+        if (params.cancellationDetails && !setToCancel) {
+          throw invalid(
+            'cancellation_details can only be set on subscriptions that are set to cancel.',
+          )
+        }
         if (params.cancelAtPeriodEnd !== undefined) {
           s.cancelAtPeriodEnd = params.cancelAtPeriodEnd
           s.cancelAt = params.cancelAtPeriodEnd ? s.currentPeriodEnd : null
         }
-        if (params.cancelAt !== undefined) s.cancelAt = params.cancelAt
         if (params.cancellationDetails) {
           s.cancellationDetails = {
             feedback: params.cancellationDetails.feedback ?? null,
@@ -326,10 +341,6 @@ export function createFakeStripe(): FakeStripe {
             (!params.subscription || i.subscription === params.subscription),
         ),
       )
-    },
-    async latestPaidPeriodEnd(subscriptionId) {
-      record('latestPaidPeriodEnd', [subscriptionId])
-      return state.paidPeriodEnds.get(subscriptionId) ?? null
     },
     async retrieveInvoice(id) {
       record('retrieveInvoice', [id])
