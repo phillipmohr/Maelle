@@ -57,6 +57,8 @@ export function describeExecution(
       return join([comment ? `“${comment}”` : null, str(p.feedback), note])
     }
     case 'cancel_at_period_end': {
+      // A paused subscription is cancelled now (IRDR-483).
+      if (result.status === 'canceled') return join(['paused, cancelled now', note])
       const until = dateLabel(result.accessUntil ?? p.accessUntil)
       return join([until ? `access until ${until}` : str(p.stripeSubscriptionId), note])
     }

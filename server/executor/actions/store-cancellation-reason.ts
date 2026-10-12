@@ -20,6 +20,9 @@ export const storeCancellationReason: ActionHandler<'store_cancellation_reason'>
       const sub = await ctx.clients.stripe.retrieveSubscription(subscriptionId)
       if (sub.status === 'canceled') {
         stripeNote = 'subscription already cancelled, Stripe keeps the details it has'
+      } else if (!sub.cancelAtPeriodEnd && sub.cancelAt === null) {
+        // Stripe takes cancellation_details only on a subscription set to cancel (IRDR-483).
+        stripeNote = `subscription ${sub.status} and not set to cancel, Maelle row only`
       } else {
         await ctx.clients.stripe.updateSubscription(
           subscriptionId,
