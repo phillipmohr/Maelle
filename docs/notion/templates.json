@@ -1,24 +1,24 @@
 {
-  "source": "Notion Templates DB, collection://3e8c931f-6ae5-8071-98a0-000befdd6354, snapshot 2026-10-11 (paused state, IRDR-482)",
+  "source": "Notion Templates DB, collection://3e8c931f-6ae5-8071-98a0-000befdd6354, snapshot 2026-10-12 (paused state, IRDR-482, IRDR-483)",
   "note": "Reply texts are the Notion templates verbatim (placeholders in [brackets]). 'Research in Stripe/Supabase/Vercel' and 'Search knowledge base' describe research, not executable actions.",
   "templates": [
     {
       "key": "cancellation_only",
       "name": "Cancellation only",
       "url": "https://app.notion.com/p/3e8c931f6ae581429b0ecd9c9abee871",
-      "trigger": "Customer wants to cancel their subscription and does not ask for a refund, also when they ask to cancel immediately. Cancel at the end of the paid period, never immediately. No confirmation needed and no refund. Do not ask why they cancel. If they ask for money back, use Refund request (latest payment).",
+      "trigger": "Customer wants to cancel their subscription and does not ask for a refund, also when they ask to cancel immediately. Use Cancel at period end, never Cancel immediately; a paused subscription ends right away. No confirmation needed and no refund. Do not ask why they cancel. If they ask for money back, use Refund request (latest payment).",
       "actions": ["Research in Stripe/Supabase/Vercel", "Cancel at period end"],
       "requiresConfirmation": false,
-      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription. It ends at the end of your current billing period and will not renew, so you will not be charged again. Until then it stays paused, because InstaRadar is currently paused.\n\nWhen your subscription ends, the data saved in your account will be deleted, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription, so you will not be charged again.\n\nWith the cancellation, the data saved in your account will be deleted even though InstaRadar is down, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
     },
     {
       "key": "cancellation_reason_ask",
       "name": "Cancellation + reason ask",
       "url": "https://app.notion.com/p/3e8c931f6ae58147b800e658bf20d6d7",
-      "trigger": "Not a separate case while the service is paused. Do not ask customers why they cancel. Handle exactly like Cancellation only: cancel at the end of the paid period, no confirmation, no refund.",
+      "trigger": "Not a separate case while the service is paused. Do not ask customers why they cancel. Handle exactly like Cancellation only: Cancel at period end, no confirmation, no refund.",
       "actions": ["Research in Stripe/Supabase/Vercel", "Cancel at period end"],
       "requiresConfirmation": false,
-      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription. It ends at the end of your current billing period and will not renew, so you will not be charged again. Until then it stays paused, because InstaRadar is currently paused.\n\nWhen your subscription ends, the data saved in your account will be deleted, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+      "reply": "Hi, thanks for reaching out!\n\nI've cancelled your subscription, so you will not be charged again.\n\nWith the cancellation, the data saved in your account will be deleted even though InstaRadar is down, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
     },
     {
       "key": "refund_request",
@@ -162,10 +162,10 @@
       "key": "cannot_cancel",
       "name": "Cannot cancel (missing button)",
       "url": "https://app.notion.com/p/3e8c931f6ae5814c9db2cc7b24311637",
-      "trigger": "Customer cannot find where to cancel, for example because the site is offline, and wants help ending their subscription. No refund mentioned. Same handling as Cancellation only: cancel at the end of the paid period, no confirmation, no refund.",
+      "trigger": "Customer cannot find where to cancel, for example because the site is offline, and wants help ending their subscription. No refund mentioned. Same handling as Cancellation only: Cancel at period end, no confirmation, no refund.",
       "actions": ["Research in Stripe/Supabase/Vercel", "Cancel at period end"],
       "requiresConfirmation": false,
-      "reply": "Hi, thanks for reaching out, and sorry it wasn't easy to find!\n\nI've cancelled your subscription for you. It ends at the end of your current billing period and will not renew, so you will not be charged again. Until then it stays paused, because InstaRadar is currently paused.\n\nWhen your subscription ends, the data saved in your account will be deleted, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
+      "reply": "Hi, thanks for reaching out, and sorry it wasn't easy to find!\n\nI've cancelled your subscription for you, so you will not be charged again.\n\nWith the cancellation, the data saved in your account will be deleted even though InstaRadar is down, most importantly your saved tracking activity for [profile]. If InstaRadar comes back, you can get your data back.\n\nIf you have any questions, just reply to this email.\n\nBest regards,\nAnastasia\nInstaRadar Support"
     }
   ]
 }

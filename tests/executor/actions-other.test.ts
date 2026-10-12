@@ -98,6 +98,8 @@ describe('store_cancellation_reason', () => {
       charge: 'ch',
       amount: 799,
     })
+    // Cancel at period end ran first (order 10 before 90): Stripe takes the details now.
+    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.cancelAtPeriodEnd = true
     const out = await h.run(
       { stripeSubscriptionId: 'sub_1PzT8c', feedback: 'too_expensive', comment: 'Too expensive' },
       ctx,
@@ -144,6 +146,31 @@ describe('store_cancellation_reason', () => {
     })
     const none = await h.run({ feedback: 'other', comment: 'Not stated' }, ctx)
     expect(none.result).toMatchObject({ stripeUpdated: false })
+  })
+
+  it('keeps the Maelle row only when the subscription is not set to cancel, e.g. paused (IRDR-483)', async () => {
+    for (const status of ['paused', 'active']) {
+      const { ctx, fakes, store } = makeCtx()
+      fakes.stripe.seedCustomer({
+        customer: 'c',
+        subscription: 'sub_p',
+        paymentIntent: 'pi',
+        charge: 'ch',
+        amount: 1,
+        status,
+      })
+      const out = await h.run(
+        { stripeSubscriptionId: 'sub_p', feedback: 'unused', comment: 'InstaRadar is down' },
+        ctx,
+      )
+      expect(out.result).toMatchObject({
+        storedInMaelle: true,
+        stripeUpdated: false,
+        stripeNote: expect.stringContaining('not set to cancel'),
+      })
+      expect(store.state.cancellationReasons).toHaveLength(1)
+      expect(fakes.stripe.calls.some((c) => c.op === 'updateSubscription')).toBe(false)
+    }
   })
 })
 

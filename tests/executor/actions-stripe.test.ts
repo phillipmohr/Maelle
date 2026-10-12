@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ACTION_HANDLERS } from '../../server/executor/actions'
 import { ProviderError, PreconditionError } from '../../server/executor/errors'
 import { rateLimitError } from '../../server/executor/clients/stripe-fake'
-import { makeCtx, makeTicket } from './helpers'
+import { makeCtx, makeProposal, makeTicket } from './helpers'
 
 const seedTom = (fakes: ReturnType<typeof makeCtx>['fakes']) =>
   fakes.stripe.seedCustomer({
@@ -52,52 +52,74 @@ describe('cancel_at_period_end', () => {
   })
 })
 
-describe('cancellations on a paused subscription (IRDR-482)', () => {
+describe('cancellations on a paused subscription (IRDR-483)', () => {
   const h = ACTION_HANDLERS.cancel_at_period_end
-
-  it('cancels a paused subscription at period end without ending it now', async () => {
-    const { ctx, fakes } = makeCtx()
+  const pause = (fakes: ReturnType<typeof makeCtx>['fakes']) => {
     seedTom(fakes)
     fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
+  }
+
+  it('cancels a paused subscription now through the cancel endpoint, with the proposal reason', async () => {
+    const { ctx, fakes } = makeCtx()
+    pause(fakes)
     const out = await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
-    expect(out.result).toMatchObject({ cancelAtPeriodEnd: true })
+    expect(out.result).toMatchObject({ subscriptionId: 'sub_1PzT8c', status: 'canceled' })
     const s = fakes.stripe.state.subscriptions.get('sub_1PzT8c')!
-    expect(s.status).toBe('paused')
-    expect(s.cancelAtPeriodEnd).toBe(true)
+    expect(s.status).toBe('canceled')
+    // makeProposal's Store cancellation reason goes along with the cancel call.
+    expect(s.cancellationDetails).toEqual({ feedback: 'other', comment: 'Not stated' })
+    const cancel = fakes.stripe.calls.find((c) => c.op === 'cancelSubscription')
+    // Not the base key: failed attempts before IRDR-483 used it on the update endpoint.
+    expect(cancel?.idempotencyKey).toBe(`${ctx.idempotencyKey}:cancel`)
+    expect(fakes.stripe.calls.some((c) => c.op === 'updateSubscription')).toBe(false)
+
+    // A retry finds it cancelled and does not cancel twice.
+    const again = await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
+    expect(again.result).toMatchObject({ alreadyCancelled: true })
+    expect(fakes.stripe.calls.filter((c) => c.op === 'cancelSubscription')).toHaveLength(1)
   })
 
-  it('falls back to cancel_at = end of the paid period when Stripe refuses, and never cancels now', async () => {
+  it('cancels without details when the proposal has no enabled reason action', async () => {
     const { ctx, fakes } = makeCtx()
-    seedTom(fakes)
-    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
-    const refused = () =>
-      new ProviderError('Stripe', 'This subscription is paused', {
-        code: 'invalid_request_error',
-        statusCode: 400,
-        requestId: 'req_paused',
-      })
-    const end = Math.floor(Date.UTC(2026, 9, 14) / 1000)
-    fakes.stripe.state.paidPeriodEnds.set('sub_1PzT8c', end)
-    fakes.stripe.failNext({ op: 'updateSubscription', error: refused() })
-    const out = await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
-    expect(out.result).toMatchObject({ accessUntil: '2026-10-14' })
-    expect(fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.cancelAt).toBe(end)
-    expect(fakes.stripe.calls.some((c) => c.op === 'cancelSubscription')).toBe(false)
+    pause(fakes)
+    ctx.proposal = makeProposal({
+      actions: makeProposal().actions.map((a) =>
+        a.type === 'store_cancellation_reason' ? { ...a, enabled: false } : a,
+      ),
+    })
+    await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
+    const s = fakes.stripe.state.subscriptions.get('sub_1PzT8c')!
+    expect(s.status).toBe('canceled')
+    expect(s.cancellationDetails).toBeNull()
+  })
 
-    // The paid period is already over: it stays paused and the action fails clearly.
-    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.cancelAt = null
-    fakes.stripe.state.paidPeriodEnds.set('sub_1PzT8c', Math.floor(Date.UTC(2026, 8, 20) / 1000))
-    fakes.stripe.failNext({ op: 'updateSubscription', error: refused() })
-    await expect(h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)).rejects.toThrow(
-      /stays paused and is not charged/,
+  it('then stores the reason in Maelle without a Stripe update (the order the executor runs)', async () => {
+    const { ctx, fakes, store } = makeCtx()
+    pause(fakes)
+    await h.run({ stripeSubscriptionId: 'sub_1PzT8c' }, ctx)
+    const out = await ACTION_HANDLERS.store_cancellation_reason.run(
+      { stripeSubscriptionId: 'sub_1PzT8c', feedback: 'other', comment: 'Not stated' },
+      ctx,
     )
-    expect(fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status).toBe('paused')
+    expect(out.result).toMatchObject({ storedInMaelle: true, stripeUpdated: false })
+    expect(store.state.cancellationReasons).toHaveLength(1)
+  })
+
+  it('the fake refuses cancel_at_period_end on a paused subscription, like Stripe', async () => {
+    const { ctx, fakes } = makeCtx()
+    pause(fakes)
+    await expect(
+      ctx.clients.stripe.updateSubscription(
+        'sub_1PzT8c',
+        { cancelAtPeriodEnd: true },
+        { idempotencyKey: 'k' },
+      ),
+    ).rejects.toMatchObject({ statusCode: 400 })
   })
 
   it('cancels a paused subscription immediately (refunds end it)', async () => {
     const { ctx, fakes } = makeCtx()
-    seedTom(fakes)
-    fakes.stripe.state.subscriptions.get('sub_1PzT8c')!.status = 'paused'
+    pause(fakes)
     const out = await ACTION_HANDLERS.cancel_immediately.run(
       { stripeSubscriptionId: 'sub_1PzT8c' },
       ctx,

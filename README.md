@@ -388,8 +388,12 @@ end, refunds only of the pre-pause payment or a post-pause charge, no Delete acc
 tickets or release notices); the customer facts carry `prePausePayment` (with the prorated amount,
 `server/agent/paused-refund.ts`) and `postPauseCharges`, so the model never calculates an amount.
 The refund action accepts the latest payment before the pause or any charge after it, up to its
-remaining refundable amount; "Cancel at period end" on a paused subscription falls back to `cancel_at`
-at the end of the paid period when Stripe refuses. "Requires confirmation" comes from the Notion
+remaining refundable amount. "Cancel at period end" on a paused subscription cancels it now through
+the cancel endpoint (IRDR-483): Stripe refuses `cancel_at_period_end` and `cancel_at` on a paused
+subscription, and its billing period already ended at the pause, so nothing paid is lost and
+InstaRadar keeps the data (IRDR-474). The proposal's cancellation reason goes along with that call;
+"Store cancellation reason" writes Stripe's `cancellation_details` only on a subscription set to
+cancel and otherwise keeps the Maelle row only. "Requires confirmation" comes from the Notion
 template (code registry as the fallback). The eval harness pins `servicePaused: false` to keep the
 normal rules covered; `tests/agent/paused.test.ts` covers the paused ones.
 
